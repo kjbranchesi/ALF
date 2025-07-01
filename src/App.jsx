@@ -2,19 +2,25 @@ import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked'; // For improved Markdown rendering
 
 // --- PROMPT IMPORTS (The AI's "Brain") ---
-// Assumes you have created these files in a `src/prompts/` directory
+// All prompts are imported to be used by the application's logic.
 import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
 import { earlyPrimaryPrompt } from './prompts/early_primary_prompt.js';
 import { primaryPrompt } from './prompts/primary_prompt.js';
 import { middleSchoolPrompt } from './prompts/middle_school_prompt.js';
 import { highSchoolPrompt } from './prompts/high_school_prompt.js';
-// Studio prompts can be added here if you want to use them in the initial brainstorming
-// import { studioFoodscapesPrompt } from './prompts/studio_foodscapes_prompt.js';
+// Studio prompts are ready to be used for future features.
+import { studioFoodscapesPrompt } from './prompts/studio_foodscapes_prompt.js';
+import { studioMediaLiteracyPrompt } from './prompts/studio_media_literacy_prompt.js';
+import { studioCivilDiscoursePrompt } from './prompts/studio_civil_discourse_prompt.js';
+import { studioMedicalInterventionsPrompt } from './prompts/studio_medical_interventions_prompt.js';
+import { studioMaterialSciencePrompt } from './prompts/studio_material_science_prompt.js';
+import { studioUrbanStorytellingPrompt } from './prompts/studio_urban_storytelling_prompt.js';
+import { studioFutureOfWorkPrompt } from './prompts/studio_future_of_work_prompt.js';
 
 
 // --- STYLING OBJECT ---
-// No changes to styling from the original version
+// No changes to styling.
 const styles = {
   appContainer: { fontFamily: 'sans-serif', backgroundColor: '#f3f4f6', display: 'flex', flexDirection: 'column', height: '100vh' },
   header: { backgroundColor: 'white', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10 },
@@ -37,25 +43,18 @@ const styles = {
 
 
 // --- SVG ICONS ---
-// No changes to icons from the original version
+// No changes to icons.
 const BotIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '32px', width: '32px', color: '#4f46e5'}} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>);
 const UserIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '32px', width: '32px', color: '#6b7280'}} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>);
 const SendIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '24px', width: '24px'}} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>);
 
 
 // --- CHILD COMPONENTS ---
-
-// ChatMessage Component (Now uses `marked` for rendering)
+// No changes to child components.
 const ChatMessage = ({ message }) => {
     const { text, sender } = message;
     const isBot = sender === 'bot';
-
-    // Use `marked` to safely parse Markdown into HTML
-    const renderMarkdown = (text) => {
-        const rawMarkup = marked(text, { breaks: true, gfm: true });
-        return { __html: rawMarkup };
-    };
-
+    const renderMarkdown = (text) => ({ __html: marked(text, { breaks: true, gfm: true }) });
     return (
         <div style={styles.messageContainer(isBot)}>
             {isBot && <div style={styles.iconContainer}><BotIcon /></div>}
@@ -65,16 +64,9 @@ const ChatMessage = ({ message }) => {
     );
 };
 
-// SummaryDisplay Component (Now has a "Copy to Clipboard" button)
 const SummaryDisplay = ({ curriculumText, onRestart, onAskFollowUp }) => {
     const [copySuccess, setCopySuccess] = useState('');
-
-    const renderMarkdown = (text) => {
-        const rawMarkup = marked(text, { breaks: true, gfm: true });
-        return { __html: rawMarkup };
-    };
-    
-    // Simple copy to clipboard function
+    const renderMarkdown = (text) => ({ __html: marked(text, { breaks: true, gfm: true }) });
     const handleCopy = () => {
         const textarea = document.createElement('textarea');
         textarea.value = curriculumText;
@@ -83,20 +75,17 @@ const SummaryDisplay = ({ curriculumText, onRestart, onAskFollowUp }) => {
         try {
             document.execCommand('copy');
             setCopySuccess('Copied!');
-            setTimeout(() => setCopySuccess(''), 2000); // Reset message after 2s
+            setTimeout(() => setCopySuccess(''), 2000);
         } catch (err) {
             setCopySuccess('Failed to copy');
         }
         document.body.removeChild(textarea);
     };
-
     return (
         <div style={styles.summaryContainer}>
             <div dangerouslySetInnerHTML={renderMarkdown(curriculumText)} />
             <div style={styles.summaryActions}>
-                <button onClick={handleCopy} style={styles.copyButton}>
-                    {copySuccess || 'Copy to Clipboard'}
-                </button>
+                <button onClick={handleCopy} style={styles.copyButton}>{copySuccess || 'Copy to Clipboard'}</button>
                 <button onClick={onAskFollowUp} style={styles.actionButton}>Ask Follow-up</button>
                 <button onClick={onRestart} style={styles.actionButton}>Start New Plan</button>
             </div>
@@ -114,18 +103,18 @@ export default function App() {
     const [isBotTyping, setIsBotTyping] = useState(false);
     const [finalCurriculum, setFinalCurriculum] = useState('');
     
-    // NEW state to manage the conversation flow
-    const [conversationStage, setConversationStage] = useState('welcome'); // welcome -> intake -> chatting -> finished
-    const [systemPrompt, setSystemPrompt] = useState(''); // To hold the fully constructed prompt
+    // **REVISED** State management for the new, multi-step conversational flow.
+    const [conversationStage, setConversationStage] = useState('welcome'); // welcome -> select_age -> awaiting_intake_1 -> awaiting_intake_2 -> awaiting_intake_3 -> chatting -> finished
+    const [ageGroupPrompt, setAgeGroupPrompt] = useState(''); // Stores the selected age prompt
+    const [intakeAnswers, setIntakeAnswers] = useState({}); // Stores answers from the intake process
 
     const chatEndRef = useRef(null);
 
     // --- EFFECTS ---
-
     // Effect to start the conversation
     useEffect(() => {
         setMessages([{
-            text: "Welcome! I'm the ALF Coach, your creative partner in designing transformative learning experiences. To start, please tell me what age or grade level you are designing for (e.g., 'high school', 'primary', 'grades K-2').",
+            text: "Welcome! I'm the ALF Coach, your creative partner in designing transformative learning experiences. To start, please tell me what age or grade level you are designing for (e.g., '7 year olds', 'high school', or 'grades 3-5').",
             sender: 'bot',
             id: Date.now()
         }]);
@@ -137,10 +126,44 @@ export default function App() {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isBotTyping]);
 
-    // --- API CALL ---
+    // --- API CALLS ---
+    // **NEW** Function to handle the AI-powered age group sorting.
+    const getAgeGroupFromAI = async (userInput) => {
+        setIsBotTyping(true);
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        
+        // This prompt is highly specific to get a clean, predictable response.
+        const sorterPrompt = `You are an input sorter. Your job is to categorize the user's input into one of four specific categories: 'Early Primary', 'Primary', 'Middle School', or 'High School'. The user's input is: '${userInput}'. Respond with ONLY the category name and nothing else.`;
+        
+        const history = [{ role: "user", parts: [{ text: sorterPrompt }] }];
+
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: history })
+            });
+            if (!response.ok) return null;
+            const result = await response.json();
+            if (result.candidates && result.candidates.length > 0) {
+                const category = result.candidates[0].content.parts[0].text.trim();
+                const validCategories = ['Early Primary', 'Primary', 'Middle School', 'High School'];
+                if (validCategories.includes(category)) {
+                    return category;
+                }
+            }
+            return null; // Return null if no valid category is found
+        } catch (error) {
+            console.error("Error in age group sorter:", error);
+            return null;
+        } finally {
+            setIsBotTyping(false);
+        }
+    };
+
     const generateAiResponse = async (history) => {
         setIsBotTyping(true);
-        // IMPORTANT: Replace with your actual API key retrieval method (e.g., from environment variables)
         const apiKey = import.meta.env.VITE_GEMINI_API_KEY; 
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
@@ -184,53 +207,91 @@ export default function App() {
 
     // --- HANDLERS ---
 
-    const handleSendMessage = () => {
+    // **REWRITTEN** This is now the central hub for conversation logic, using a switch statement.
+    const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
 
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
         setMessages(prev => [...prev, userMessage]);
+        const currentInput = inputValue;
+        setInputValue(''); // Clear input immediately
 
-        // --- NEW DYNAMIC PROMPT LOGIC ---
-        if (conversationStage === 'select_age') {
-            let selectedAgePrompt = '';
-            const lowerCaseInput = inputValue.toLowerCase();
+        switch (conversationStage) {
+            case 'select_age': {
+                const category = await getAgeGroupFromAI(currentInput);
+                if (category) {
+                    let selectedPrompt = '';
+                    if (category === 'Early Primary') selectedPrompt = earlyPrimaryPrompt;
+                    else if (category === 'Primary') selectedPrompt = primaryPrompt;
+                    else if (category === 'Middle School') selectedPrompt = middleSchoolPrompt;
+                    else if (category === 'High School') selectedPrompt = highSchoolPrompt;
+                    
+                    setAgeGroupPrompt(selectedPrompt); // Store the selected age prompt
+                    
+                    // Ask the first intake question
+                    setMessages(prev => [...prev, { text: "Awesome, designing for that age group is going to be great. Before we jump into the framework, it's helpful for me to understand your starting point. Are you new to Project-Based Learning, or is this a methodology you've worked with before? Either way is perfectly fine, of course!", sender: 'bot', id: Date.now() + 1 }]);
+                    setConversationStage('awaiting_intake_1');
+                } else {
+                    setMessages(prev => [...prev, { text: "I'm sorry, I couldn't determine the age group from that. Could you please try again? For example: 'third grade', '15 year olds', or 'high school'.", sender: 'bot', id: Date.now() + 1 }]);
+                }
+                break;
+            }
 
-            if (lowerCaseInput.includes('high')) selectedAgePrompt = highSchoolPrompt;
-            else if (lowerCaseInput.includes('middle')) selectedAgePrompt = middleSchoolPrompt;
-            else if (lowerCaseInput.includes('primary') || lowerCaseInput.includes('3-5')) selectedAgePrompt = primaryPrompt;
-            else if (lowerCaseInput.includes('early') || lowerCaseInput.includes('k-2')) selectedAgePrompt = earlyPrimaryPrompt;
-            
-            if (selectedAgePrompt) {
-                // Assemble the system prompt for the first time
-                const finalSystemPrompt = `${basePrompt}\n${selectedAgePrompt}\n${intakePrompt}`;
-                setSystemPrompt(finalSystemPrompt); // Save the full prompt
+            case 'awaiting_intake_1': {
+                setIntakeAnswers(prev => ({ ...prev, experience: currentInput }));
+                // Ask the second intake question
+                setMessages(prev => [...prev, { text: "That's great to know, thank you. Now, for the fun part. Some teachers come with a specific project idea already sparking, while others like to brainstorm from a blank canvas. Do you have a particular theme or studio topic in mind, or would you like for us to explore some possibilities together?", sender: 'bot', id: Date.now() + 1 }]);
+                setConversationStage('awaiting_intake_2');
+                break;
+            }
+
+            case 'awaiting_intake_2': {
+                setIntakeAnswers(prev => ({ ...prev, idea: currentInput }));
+                // Ask the third intake question
+                setMessages(prev => [...prev, { text: "Perfect. One last thing before we start building. It's always useful to know the shape of our sandbox. Are there any practical constraints we should keep in mind, like a specific timeframe for the project, a limited budget, or particular technologies you'd like to use?", sender: 'bot', id: Date.now() + 1 }]);
+                setConversationStage('awaiting_intake_3');
+                break;
+            }
+
+            case 'awaiting_intake_3': {
+                const finalIntakeAnswers = { ...intakeAnswers, constraints: currentInput };
                 
+                // Construct the final, comprehensive system prompt
+                const finalSystemPrompt = `
+                    ${basePrompt}
+                    \n${ageGroupPrompt}
+                    \n# USER CONTEXT FROM INTAKE:
+                    - User's experience with PBL: ${finalIntakeAnswers.experience}
+                    - User's starting idea: ${finalIntakeAnswers.idea}
+                    - User's project constraints: ${finalIntakeAnswers.constraints}
+                    \n${intakePrompt}
+                `;
+
                 const initialHistory = [{ role: "user", parts: [{ text: finalSystemPrompt }] }];
-                const updatedHistory = [...initialHistory, { role: "user", parts: [{ text: inputValue }] }];
+                // This message kicks off the main conversation with the AI
+                const kickoffMessage = "Excellent, this is all incredibly helpful context for us. It gives us a great foundation to build from. Thank you! Let's get started.";
+                const updatedHistory = [...initialHistory, { role: "user", parts: [{ text: kickoffMessage }] }];
                 
                 setConversationHistory(updatedHistory);
-                setConversationStage('chatting'); // Transition to the main chat
+                setConversationStage('chatting');
                 generateAiResponse(updatedHistory);
-            } else {
-                const errorMessage = { text: "I'm sorry, I didn't recognize that age group. Please try something like 'high school', 'middle school', 'primary', or 'K-2'.", sender: 'bot', id: Date.now() + 1 };
-                setMessages(prev => [...prev, errorMessage]);
+                break;
             }
-        } else { // Handles 'chatting' and 'finished_followup' stages
-            const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: inputValue }] }];
-            setConversationHistory(updatedHistory);
-            generateAiResponse(updatedHistory);
+
+            case 'chatting': {
+                const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
+                setConversationHistory(updatedHistory);
+                generateAiResponse(updatedHistory);
+                break;
+            }
         }
-        
-        setInputValue('');
     };
 
     const handleRestart = () => {
-        // A full reload is the simplest way to reset everything
         window.location.reload();
     };
 
     const handleAskFollowUp = () => {
-        // Keep the final curriculum visible but re-enable the chat
         setConversationStage('chatting'); 
         const followUpMessage = {
             text: "Of course! What would you like to refine or discuss further about this curriculum?",
@@ -257,8 +318,8 @@ export default function App() {
                         />
                     ) : (
                         <>
-                            {messages.map((msg, index) => (
-                                <ChatMessage key={msg.id || index} message={msg} />
+                            {messages.map((msg) => (
+                                <ChatMessage key={msg.id} message={msg} />
                             ))}
                             {isBotTyping && (
                                 <div style={styles.messageContainer(true)}>
