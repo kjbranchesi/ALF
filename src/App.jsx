@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V4 PROMPT IMPORTS ---
-// All prompts, including the new V4 files, are imported.
+// --- V4.1 PROMPT IMPORTS ---
+// All prompts, including the new V4.1 files, are imported.
 import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
+import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
 import { safetyCheckPrompt } from './prompts/safety_check_prompt.js';
 import { assignmentGeneratorPrompt } from './prompts/assignment_generator_prompt.js';
 import { earlyPrimaryPrompt } from './prompts/early_primary_prompt.js';
 import { primaryPrompt } from './prompts/primary_prompt.js';
 import { middleSchoolPrompt } from './prompts/middle_school_prompt.js';
 import { highSchoolPrompt } from './prompts/high_school_prompt.js';
+import { universityPrompt } from './prompts/university_prompt.js';
+
 
 // --- STYLING & ICONS (No Changes) ---
 const styles = {
@@ -78,20 +81,19 @@ const SummaryDisplay = ({ curriculumText, onRestart, onAskFollowUp }) => {
     );
 };
 
-// --- MAIN APP COMPONENT (V4 REWRITE) ---
+// --- MAIN APP COMPONENT (V4.1 REWRITE) ---
 export default function App() {
-    // --- V4 STATE MANAGEMENT ---
+    // --- V4.1 STATE MANAGEMENT ---
     const [messages, setMessages] = useState([]);
     const [conversationHistory, setConversationHistory] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [isBotTyping, setIsBotTyping] = useState(false);
     const [finalCurriculum, setFinalCurriculum] = useState('');
     
-    // **NEW** More granular state machine for the entire V4 conversation flow.
+    // **REVISED** More granular state machine for the entire V4.1 conversation flow.
     const [conversationStage, setConversationStage] = useState('welcome');
     const [ageGroupPrompt, setAgeGroupPrompt] = useState('');
     const [intakeAnswers, setIntakeAnswers] = useState({});
-    // **NEW** State to hold the defined Catalyst for the safety check.
     const [catalystSummary, setCatalystSummary] = useState('');
 
     const chatEndRef = useRef(null);
@@ -99,7 +101,7 @@ export default function App() {
     // --- EFFECTS ---
     useEffect(() => {
         setMessages([{
-            text: "Welcome! I'm the ALF Coach, your creative partner in designing transformative learning experiences. To start, please tell me what age or grade level you are designing for (e.g., '7 year olds', 'high school', or 'grades 3-5').",
+            text: "Welcome! I'm the ALF Coach, your creative partner in designing transformative learning experiences. To start, please tell me what age or grade level you are designing for (e.g., '7 year olds', 'high school', or 'university').",
             sender: 'bot',
             id: Date.now()
         }]);
@@ -115,7 +117,7 @@ export default function App() {
         setIsBotTyping(true);
         const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-        const sorterPrompt = `You are an input sorter. Your job is to categorize the user's input into one of four specific categories: 'Early Primary', 'Primary', 'Middle School', or 'High School'. The user's input is: '${userInput}'. Respond with ONLY the category name and nothing else.`;
+        const sorterPrompt = `You are an input sorter. Your job is to categorize the user's input into one of five specific categories: 'Early Primary', 'Primary', 'Middle School', 'High School', or 'University'. The user's input is: '${userInput}'. Respond with ONLY the category name and nothing else.`;
         const history = [{ role: "user", parts: [{ text: sorterPrompt }] }];
         try {
             const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: history }) });
@@ -123,7 +125,7 @@ export default function App() {
             const result = await response.json();
             if (result.candidates && result.candidates.length > 0) {
                 const category = result.candidates[0].content.parts[0].text.trim();
-                const validCategories = ['Early Primary', 'Primary', 'Middle School', 'High School'];
+                const validCategories = ['Early Primary', 'Primary', 'Middle School', 'High School', 'University'];
                 if (validCategories.includes(category)) return category;
             }
             return null;
@@ -135,8 +137,23 @@ export default function App() {
         }
     };
     
-    // **NEW** API call specifically for the safety check.
-    const runSafetyCheck = async (catalystText) => {
+    const runIntakeSafetyCheck = async (userInput) => {
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const checkPrompt = intakeSafetyCheckPrompt.replace('[USER\'S RESPONSE]', userInput);
+        const history = [{ role: "user", parts: [{ text: checkPrompt }] }];
+        try {
+            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: history }) });
+            if (!response.ok) return "SAFE"; // Default to safe on error
+            const result = await response.json();
+            return result.candidates[0].content.parts[0].text.trim();
+        } catch (error) {
+            console.error("Error in intake safety check:", error);
+            return "SAFE";
+        }
+    };
+
+    const runMainSafetyCheck = async (catalystText) => {
         setIsBotTyping(true);
         const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
@@ -148,7 +165,7 @@ export default function App() {
             const result = await response.json();
             return result.candidates[0].content.parts[0].text.trim();
         } catch (error) {
-            console.error("Error in safety check:", error);
+            console.error("Error in main safety check:", error);
             return "Error";
         } finally {
             setIsBotTyping(false);
@@ -159,13 +176,10 @@ export default function App() {
         setIsBotTyping(true);
         const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-        
         let currentHistory = [...history];
         if (isAssignment) {
-            // If generating assignments, prepend the specific prompt.
             currentHistory.unshift({ role: "user", parts: [{ text: assignmentGeneratorPrompt }] });
         }
-
         try {
             const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: currentHistory }) });
             if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
@@ -175,21 +189,19 @@ export default function App() {
                 const newHistory = [...history, { role: "model", parts: [{ text }] }];
                 setConversationHistory(newHistory);
                 
-                // **NEW** Logic to handle different signals from the AI.
                 const CATALYST_SIGNAL = "<<<CATALYST_DEFINED>>>";
                 const COMPLETION_SIGNAL = "<<<CURRICULUM_COMPLETE>>>";
 
                 if (text.includes(CATALYST_SIGNAL)) {
                     const summary = text.replace(CATALYST_SIGNAL, "").trim();
-                    setCatalystSummary(summary); // Save the catalyst
-                    const safetyResult = await runSafetyCheck(summary);
+                    setCatalystSummary(summary);
+                    const safetyResult = await runMainSafetyCheck(summary);
                     if (safetyResult === "PROCEED") {
                         const transitionMessage = newHistory[newHistory.length - 1].parts[0].text.replace(CATALYST_SIGNAL, "").trim();
                         setMessages(prev => [...prev, { text: transitionMessage, sender: 'bot', id: Date.now() }]);
                         setConversationStage('issues_planning');
                     } else {
                         setMessages(prev => [...prev, { text: safetyResult, sender: 'bot', id: Date.now() }]);
-                        // Stay in catalyst planning stage to redefine
                     }
                 } else if (text.includes(COMPLETION_SIGNAL)) {
                     const curriculumText = text.replace(COMPLETION_SIGNAL, "").trim();
@@ -211,7 +223,7 @@ export default function App() {
         }
     };
     
-    // --- V4 HANDLERS ---
+    // --- V4.1 HANDLERS ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
@@ -228,30 +240,44 @@ export default function App() {
                     else if (category === 'Primary') selectedPrompt = primaryPrompt;
                     else if (category === 'Middle School') selectedPrompt = middleSchoolPrompt;
                     else if (category === 'High School') selectedPrompt = highSchoolPrompt;
+                    else if (category === 'University') selectedPrompt = universityPrompt;
                     setAgeGroupPrompt(selectedPrompt);
-                    setMessages(prev => [...prev, { text: "Awesome, designing for that age group is going to be great. Before we jump into the framework, it's helpful for me to understand your starting point. Are you new to Project-Based Learning, or is this a methodology you've worked with before? Either way is perfectly fine, of course!", sender: 'bot', id: Date.now() + 1 }]);
+                    const kickoffMessage = { text: "Are you new to Project-Based Learning, or is this a methodology you've worked with before? Either way is perfectly fine, of course!", sender: 'bot', id: Date.now() + 1 };
+                    setMessages(prev => [...prev, kickoffMessage]);
                     setConversationStage('awaiting_intake_1');
                 } else {
-                    setMessages(prev => [...prev, { text: "I'm sorry, I couldn't determine the age group. Could you please try again? For example: 'third grade', '15 year olds', or 'high school'.", sender: 'bot', id: Date.now() + 1 }]);
+                    setMessages(prev => [...prev, { text: "I'm sorry, I couldn't determine the age group. Could you please try again?", sender: 'bot', id: Date.now() + 1 }]);
                 }
                 break;
             }
             case 'awaiting_intake_1': {
                 setIntakeAnswers(prev => ({ ...prev, experience: currentInput }));
-                setMessages(prev => [...prev, { text: "That's great to know, thank you. Now, for the fun part. Do you have a particular theme or studio topic in mind, or would you like for us to explore some possibilities together?", sender: 'bot', id: Date.now() + 1 }]);
+                const kickoffMessage = `Based on your experience level of "${currentInput}", let's start brainstorming.`;
+                const systemPrompt = `${intakePrompt}\n${kickoffMessage}`;
+                generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
                 setConversationStage('awaiting_intake_2');
                 break;
             }
             case 'awaiting_intake_2': {
+                const sentiment = await runIntakeSafetyCheck(currentInput);
+                if (sentiment === 'UNSAFE') {
+                    setMessages(prev => [...prev, { text: "I cannot proceed with that topic as it violates safety guidelines. Please choose a different theme.", sender: 'bot', id: Date.now() + 1 }]);
+                    return; // Halt the process
+                }
+                let toneInstruction = '';
+                if (sentiment === 'QUESTIONABLE') {
+                    toneInstruction = "The user has proposed a sensitive topic. Adopt a neutral, probing tone. Do not use positive affirmations. Ask for the educational goals of the theme.";
+                }
                 setIntakeAnswers(prev => ({ ...prev, idea: currentInput }));
-                setMessages(prev => [...prev, { text: "Perfect. One last thing before we start building. Are there any practical constraints we should keep in mind, like a specific timeframe, a limited budget, or particular technologies?", sender: 'bot', id: Date.now() + 1 }]);
+                const systemPrompt = `${intakePrompt}\n${toneInstruction}`;
+                generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
                 setConversationStage('awaiting_intake_3');
                 break;
             }
             case 'awaiting_intake_3': {
                 const finalIntakeAnswers = { ...intakeAnswers, constraints: currentInput };
-                const finalSystemPrompt = `${basePrompt}\n${ageGroupPrompt}\n# USER CONTEXT FROM INTAKE:\n- User's experience with PBL: ${finalIntakeAnswers.experience}\n- User's starting idea: ${finalIntakeAnswers.idea}\n- User's project constraints: ${finalIntakeAnswers.constraints}\n${intakePrompt}`;
-                const kickoffMessage = `Based on your experience level of "${finalIntakeAnswers.experience}", let's begin.`;
+                const finalSystemPrompt = `${basePrompt}\n${ageGroupPrompt}\n# USER CONTEXT FROM INTAKE:\n- User's experience with PBL: ${finalIntakeAnswers.experience}\n- User's starting idea: ${finalIntakeAnswers.idea}\n- User's project constraints: ${finalIntakeAnswers.constraints}`;
+                const kickoffMessage = "Excellent, this is all incredibly helpful context. Let's get started.";
                 const initialHistory = [{ role: "user", parts: [{ text: finalSystemPrompt }] }, { role: "user", parts: [{ text: kickoffMessage }] }];
                 setConversationHistory(initialHistory);
                 setConversationStage('catalyst_planning');
@@ -269,7 +295,7 @@ export default function App() {
             }
             case 'follow_up': {
                 if (currentInput.toLowerCase().includes('assignment')) {
-                    generateAiResponse(conversationHistory, true); // true indicates this is an assignment generation task
+                    generateAiResponse(conversationHistory, true);
                 } else {
                     const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
                     setConversationHistory(updatedHistory);

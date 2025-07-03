@@ -1,4 +1,4 @@
-// V4 REWRITE: studio_foodscapes_prompt.js
+// V4.1 REWRITE: studio_foodscapes_prompt.js
 // This prompt has been rewritten to be more provocative and to encourage deeper, more creative thinking.
 // The title is changed from "Foodscapes" to "The Archaeology of a Lunch Table."
 
