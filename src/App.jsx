@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V4.1 PROMPT IMPORTS ---
-// All prompts, including the new V4.1 files, are imported.
+// --- V5 PROMPT IMPORTS ---
+// All prompts, including the new V5 files, are imported.
 import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
 import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
@@ -81,22 +81,23 @@ const SummaryDisplay = ({ curriculumText, onRestart, onAskFollowUp }) => {
     );
 };
 
-// --- MAIN APP COMPONENT (V4.1 REWRITE) ---
+// --- MAIN APP COMPONENT (V5 REWRITE) ---
 export default function App() {
-    // --- V4.1 STATE MANAGEMENT ---
+    // --- V5 STATE MANAGEMENT ---
     const [messages, setMessages] = useState([]);
     const [conversationHistory, setConversationHistory] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [isBotTyping, setIsBotTyping] = useState(false);
     const [finalCurriculum, setFinalCurriculum] = useState('');
     
-    // **REVISED** More granular state machine for the entire V4.1 conversation flow.
+    // **REVISED** State machine for the entire V5 conversational flow.
     const [conversationStage, setConversationStage] = useState('welcome');
     const [ageGroupPrompt, setAgeGroupPrompt] = useState('');
     const [intakeAnswers, setIntakeAnswers] = useState({});
     const [catalystSummary, setCatalystSummary] = useState('');
 
     const chatEndRef = useRef(null);
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
     // --- EFFECTS ---
     useEffect(() => {
@@ -112,81 +113,54 @@ export default function App() {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isBotTyping]);
 
-    // --- API CALLS ---
-    const getAgeGroupFromAI = async (userInput) => {
-        setIsBotTyping(true);
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    // --- API UTILITY ---
+    const callApi = async (history) => {
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: history })
+        });
+        if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
+        return await response.json();
+    };
+
+    // --- SPECIALIZED API CALLS ---
+    const getAgeGroupFromAI = async (userInput) => {
         const sorterPrompt = `You are an input sorter. Your job is to categorize the user's input into one of five specific categories: 'Early Primary', 'Primary', 'Middle School', 'High School', or 'University'. The user's input is: '${userInput}'. Respond with ONLY the category name and nothing else.`;
-        const history = [{ role: "user", parts: [{ text: sorterPrompt }] }];
-        try {
-            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: history }) });
-            if (!response.ok) return null;
-            const result = await response.json();
-            if (result.candidates && result.candidates.length > 0) {
-                const category = result.candidates[0].content.parts[0].text.trim();
-                const validCategories = ['Early Primary', 'Primary', 'Middle School', 'High School', 'University'];
-                if (validCategories.includes(category)) return category;
-            }
-            return null;
-        } catch (error) {
-            console.error("Error in age group sorter:", error);
-            return null;
-        } finally {
-            setIsBotTyping(false);
+        const result = await callApi([{ role: "user", parts: [{ text: sorterPrompt }] }]);
+        if (result.candidates && result.candidates.length > 0) {
+            const category = result.candidates[0].content.parts[0].text.trim();
+            const validCategories = ['Early Primary', 'Primary', 'Middle School', 'High School', 'University'];
+            if (validCategories.includes(category)) return category;
         }
+        return null;
     };
     
     const runIntakeSafetyCheck = async (userInput) => {
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-        const checkPrompt = intakeSafetyCheckPrompt.replace('[USER\'S RESPONSE]', userInput);
-        const history = [{ role: "user", parts: [{ text: checkPrompt }] }];
-        try {
-            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: history }) });
-            if (!response.ok) return "SAFE"; // Default to safe on error
-            const result = await response.json();
-            return result.candidates[0].content.parts[0].text.trim();
-        } catch (error) {
-            console.error("Error in intake safety check:", error);
-            return "SAFE";
-        }
+        const checkPrompt = intakeSafetyCheckPrompt.replace("[USER'S RESPONSE]", userInput);
+        const result = await callApi([{ role: "user", parts: [{ text: checkPrompt }] }]);
+        return result.candidates?.[0]?.content.parts[0].text.trim() || "SAFE";
     };
 
     const runMainSafetyCheck = async (catalystText) => {
-        setIsBotTyping(true);
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         const checkPrompt = safetyCheckPrompt.replace('[CATALYST SUMMARY]', catalystText);
-        const history = [{ role: "user", parts: [{ text: checkPrompt }] }];
-        try {
-            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: history }) });
-            if (!response.ok) return "Error";
-            const result = await response.json();
-            return result.candidates[0].content.parts[0].text.trim();
-        } catch (error) {
-            console.error("Error in main safety check:", error);
-            return "Error";
-        } finally {
-            setIsBotTyping(false);
-        }
+        const result = await callApi([{ role: "user", parts: [{ text: checkPrompt }] }]);
+        return result.candidates?.[0]?.content.parts[0].text.trim() || "Error";
     };
 
-    const generateAiResponse = async (history, isAssignment = false) => {
+    // --- MAIN RESPONSE GENERATOR ---
+    const generateAiResponse = async (currentHistory, isAssignment = false) => {
         setIsBotTyping(true);
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-        let currentHistory = [...history];
+        let historyForApi = [...currentHistory];
         if (isAssignment) {
-            currentHistory.unshift({ role: "user", parts: [{ text: assignmentGeneratorPrompt }] });
+            historyForApi.unshift({ role: "user", parts: [{ text: assignmentGeneratorPrompt }] });
         }
         try {
-            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: currentHistory }) });
-            if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
-            const result = await response.json();
+            const result = await callApi(historyForApi);
             if (result.candidates && result.candidates[0].content) {
                 let text = result.candidates[0].content.parts[0].text;
-                const newHistory = [...history, { role: "model", parts: [{ text }] }];
+                const newHistory = [...currentHistory, { role: "model", parts: [{ text }] }];
                 setConversationHistory(newHistory);
                 
                 const CATALYST_SIGNAL = "<<<CATALYST_DEFINED>>>";
@@ -202,11 +176,12 @@ export default function App() {
                         setConversationStage('issues_planning');
                     } else {
                         setMessages(prev => [...prev, { text: safetyResult, sender: 'bot', id: Date.now() }]);
+                        setConversationStage('catalyst_planning'); // Return to catalyst planning
                     }
                 } else if (text.includes(COMPLETION_SIGNAL)) {
                     const curriculumText = text.replace(COMPLETION_SIGNAL, "").trim();
                     setFinalCurriculum(curriculumText);
-                    setConversationStage('finished');
+                    setConversationStage('finished_curriculum');
                 } else {
                     setMessages(prev => [...prev, { text, sender: 'bot', id: Date.now() }]);
                 }
@@ -223,7 +198,7 @@ export default function App() {
         }
     };
     
-    // --- V4.1 HANDLERS ---
+    // --- V5 `handleSendMessage` LOGIC HUB ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
@@ -231,85 +206,100 @@ export default function App() {
         const currentInput = inputValue;
         setInputValue('');
 
-        switch (conversationStage) {
-            case 'select_age': {
-                const category = await getAgeGroupFromAI(currentInput);
-                if (category) {
-                    let selectedPrompt = '';
-                    if (category === 'Early Primary') selectedPrompt = earlyPrimaryPrompt;
-                    else if (category === 'Primary') selectedPrompt = primaryPrompt;
-                    else if (category === 'Middle School') selectedPrompt = middleSchoolPrompt;
-                    else if (category === 'High School') selectedPrompt = highSchoolPrompt;
-                    else if (category === 'University') selectedPrompt = universityPrompt;
-                    setAgeGroupPrompt(selectedPrompt);
-                    const kickoffMessage = { text: "Are you new to Project-Based Learning, or is this a methodology you've worked with before? Either way is perfectly fine, of course!", sender: 'bot', id: Date.now() + 1 };
-                    setMessages(prev => [...prev, kickoffMessage]);
-                    setConversationStage('awaiting_intake_1');
-                } else {
-                    setMessages(prev => [...prev, { text: "I'm sorry, I couldn't determine the age group. Could you please try again?", sender: 'bot', id: Date.now() + 1 }]);
+        setIsBotTyping(true);
+
+        try {
+            switch (conversationStage) {
+                case 'select_age': {
+                    const category = await getAgeGroupFromAI(currentInput);
+                    if (category) {
+                        let selectedPrompt = '';
+                        if (category === 'Early Primary') selectedPrompt = earlyPrimaryPrompt;
+                        else if (category === 'Primary') selectedPrompt = primaryPrompt;
+                        else if (category === 'Middle School') selectedPrompt = middleSchoolPrompt;
+                        else if (category === 'High School') selectedPrompt = highSchoolPrompt;
+                        else if (category === 'University') selectedPrompt = universityPrompt;
+                        setAgeGroupPrompt(selectedPrompt);
+                        setMessages(prev => [...prev, { text: "Are you new to Project-Based Learning, or is this a methodology you've worked with before? Either way is perfectly fine, of course!", sender: 'bot', id: Date.now() + 1 }]);
+                        setConversationStage('awaiting_intake_1');
+                    } else {
+                        setMessages(prev => [...prev, { text: "I'm sorry, I couldn't determine the age group. Could you please try again?", sender: 'bot', id: Date.now() + 1 }]);
+                    }
+                    break;
                 }
-                break;
-            }
-            case 'awaiting_intake_1': {
-                setIntakeAnswers(prev => ({ ...prev, experience: currentInput }));
-                const kickoffMessage = `Based on your experience level of "${currentInput}", let's start brainstorming.`;
-                const systemPrompt = `${intakePrompt}\n${kickoffMessage}`;
-                generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
-                setConversationStage('awaiting_intake_2');
-                break;
-            }
-            case 'awaiting_intake_2': {
-                const sentiment = await runIntakeSafetyCheck(currentInput);
-                if (sentiment === 'UNSAFE') {
-                    setMessages(prev => [...prev, { text: "I cannot proceed with that topic as it violates safety guidelines. Please choose a different theme.", sender: 'bot', id: Date.now() + 1 }]);
-                    return; // Halt the process
+                case 'awaiting_intake_1': {
+                    setIntakeAnswers({ experience: currentInput });
+                    const systemPrompt = `${intakePrompt}\nUser's experience level: ${currentInput}`;
+                    await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
+                    setConversationStage('awaiting_intake_2');
+                    break;
                 }
-                let toneInstruction = '';
-                if (sentiment === 'QUESTIONABLE') {
-                    toneInstruction = "The user has proposed a sensitive topic. Adopt a neutral, probing tone. Do not use positive affirmations. Ask for the educational goals of the theme.";
+                case 'awaiting_intake_2': {
+                    const sentiment = await runIntakeSafetyCheck(currentInput);
+                    if (sentiment === 'UNSAFE') {
+                        setMessages(prev => [...prev, { text: "I cannot proceed with that topic as it violates safety guidelines. Please choose a different theme.", sender: 'bot', id: Date.now() + 1 }]);
+                        setConversationStage('awaiting_intake_2'); // Stay in this stage
+                        return;
+                    }
+                    let toneInstruction = sentiment === 'QUESTIONABLE' ? "The user has proposed a sensitive topic. Adopt a neutral, probing tone. Do not use positive affirmations." : "";
+                    setIntakeAnswers(prev => ({ ...prev, idea: currentInput }));
+                    const systemPrompt = `${intakePrompt}\n${toneInstruction}\nUser's project idea: ${currentInput}`;
+                    await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
+                    setConversationStage('awaiting_intake_3');
+                    break;
                 }
-                setIntakeAnswers(prev => ({ ...prev, idea: currentInput }));
-                const systemPrompt = `${intakePrompt}\n${toneInstruction}`;
-                generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
-                setConversationStage('awaiting_intake_3');
-                break;
-            }
-            case 'awaiting_intake_3': {
-                const finalIntakeAnswers = { ...intakeAnswers, constraints: currentInput };
-                const finalSystemPrompt = `${basePrompt}\n${ageGroupPrompt}\n# USER CONTEXT FROM INTAKE:\n- User's experience with PBL: ${finalIntakeAnswers.experience}\n- User's starting idea: ${finalIntakeAnswers.idea}\n- User's project constraints: ${finalIntakeAnswers.constraints}`;
-                const kickoffMessage = "Excellent, this is all incredibly helpful context. Let's get started.";
-                const initialHistory = [{ role: "user", parts: [{ text: finalSystemPrompt }] }, { role: "user", parts: [{ text: kickoffMessage }] }];
-                setConversationHistory(initialHistory);
-                setConversationStage('catalyst_planning');
-                generateAiResponse(initialHistory);
-                break;
-            }
-            case 'catalyst_planning':
-            case 'issues_planning':
-            case 'method_planning':
-            case 'engagement_planning': {
-                const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
-                setConversationHistory(updatedHistory);
-                generateAiResponse(updatedHistory);
-                break;
-            }
-            case 'follow_up': {
-                if (currentInput.toLowerCase().includes('assignment')) {
-                    generateAiResponse(conversationHistory, true);
-                } else {
+                case 'awaiting_intake_3': {
+                    const finalIntakeAnswers = { ...intakeAnswers, constraints: currentInput };
+                    const finalSystemPrompt = `${basePrompt}\n${ageGroupPrompt}\n# USER CONTEXT FROM INTAKE:\n- User's experience with PBL: ${finalIntakeAnswers.experience}\n- User's starting idea: ${finalIntakeAnswers.idea}\n- User's project constraints: ${finalIntakeAnswers.constraints}`;
+                    const kickoffMessage = "Excellent, this is all incredibly helpful context. Let's get started.";
+                    const initialHistory = [{ role: "user", parts: [{ text: finalSystemPrompt }] }, { role: "user", parts: [{ text: kickoffMessage }] }];
+                    setConversationHistory(initialHistory);
+                    setConversationStage('catalyst_planning');
+                    await generateAiResponse(initialHistory);
+                    break;
+                }
+                case 'catalyst_planning':
+                case 'issues_planning':
+                case 'method_planning':
+                case 'engagement_planning': {
                     const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
-                    setConversationHistory(updatedHistory);
-                    generateAiResponse(updatedHistory);
+                    await generateAiResponse(updatedHistory);
+                    break;
                 }
-                break;
+                case 'awaiting_assignments': {
+                    if (currentInput.toLowerCase().includes('yes')) {
+                        setConversationStage('generating_assignments');
+                        await generateAiResponse(conversationHistory, true);
+                    } else {
+                        setMessages(prev => [...prev, { text: "No problem! Feel free to ask any other follow-up questions.", sender: 'bot', id: Date.now() + 1 }]);
+                        setConversationStage('follow_up');
+                    }
+                    break;
+                }
+                case 'follow_up': {
+                    if (currentInput.toLowerCase().includes('assignment')) {
+                        setConversationStage('generating_assignments');
+                        await generateAiResponse(conversationHistory, true);
+                    } else {
+                        const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
+                        await generateAiResponse(updatedHistory);
+                    }
+                    break;
+                }
             }
+        } catch (error) {
+            console.error("Error in handleSendMessage:", error);
+            setMessages(prev => [...prev, { text: "An unexpected error occurred. Please try again.", sender: 'bot', id: Date.now() }]);
+        } finally {
+            setIsBotTyping(false);
         }
     };
 
     const handleRestart = () => window.location.reload();
     const handleAskFollowUp = () => {
-        setConversationStage('follow_up'); 
-        const followUpMessage = { text: "Of course! What would you like to refine or discuss further? We can also generate a set of scaffolded assignments for this curriculum.", sender: 'bot', id: Date.now() };
+        // This is now the default next step after curriculum is finished
+        setConversationStage('awaiting_assignments'); 
+        const followUpMessage = { text: "We now have a strong foundation for our curriculum. Shall we now proceed to build out the detailed, scaffolded assignments for the students?", sender: 'bot', id: Date.now() };
         setMessages(prev => [...prev, followUpMessage]);
     };
 
@@ -319,7 +309,7 @@ export default function App() {
             <header style={styles.header}><h1 style={styles.headerTitle}>ALF - The Active Learning Framework Coach</h1></header>
             <main style={styles.mainContent}>
                 <div style={styles.contentWrapper}>
-                    {conversationStage === 'finished' ? (
+                    {conversationStage === 'finished_curriculum' ? (
                         <SummaryDisplay curriculumText={finalCurriculum} onRestart={handleRestart} onAskFollowUp={handleAskFollowUp} />
                     ) : (
                         <>
@@ -341,7 +331,7 @@ export default function App() {
                     )}
                 </div>
             </main>
-            {conversationStage !== 'finished' && (
+            {conversationStage !== 'finished_curriculum' && (
                 <footer style={styles.footer}>
                     <div style={styles.contentWrapper}>
                         <div style={styles.inputArea}>
