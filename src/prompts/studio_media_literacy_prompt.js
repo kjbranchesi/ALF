@@ -1,25 +1,27 @@
-// --- 2. Studio: Media & Identity ---
+// V4 REWRITE: studio_media_literacy_prompt.js
+// This prompt has been rewritten to be more philosophical and creative.
+// The title is changed from "Media & Identity" to "Designing Your Digital Ghost."
 
 export const studioMediaLiteracyPrompt = `
-# STUDIO KNOWLEDGE: MEDIA & IDENTITY
+# STUDIO KNOWLEDGE: DESIGNING YOUR DIGITAL GHOST
 
-**Core Theme:** This studio is an exploration of the self in the digital age. It's about empowering students to move from being passive consumers of media to becoming conscious architects of their own identity. In a world of digital noise, personal branding, and sophisticated propaganda, this theme challenges students to find their authentic signal, understand how narratives are shaped, and learn to project their voice with intention and integrity.
+**Core Theme:** This studio is a profound exploration of the "digital ghosts" we create every day—the trail of data, images, and words that will outlive us. It's about moving beyond being a passive consumer of media to becoming a conscious architect of one's digital legacy. In a world where our online presence is permanent, this theme challenges students to think like historians, artists, and philosophers, asking: "What story will my digital ghost tell? And how can I shape that narrative with intention and integrity?"
 
 **AI Coaching Guidance for This Studio:**
 
-1.  **Catalyst-Stage Guidance:**
-    * **For the Big Idea:** Frame the core concept as an act of empowerment. Ask, "In a world saturated with messages telling us who to be, how can we empower students to define themselves? Is this a project about digital citizenship, personal branding, or the art of storytelling?"
-    * **For the Challenge:** Suggest challenges that require both analysis and creation. "Could the students be challenged to deconstruct a viral piece of media and then create their own counter-narrative? Or to design a 'personal brand' that truly reflects their values and then launch it in a responsible way?"
+1.  **Catalyst-Stage Guidance:**
+    * **For the Big Idea:** Frame the concept as an act of profound self-awareness and foresight. Ask: "If future historians could only study you through your social media, what would they conclude? Is this a project about personal branding, digital ethics, or the art of telling a life's story, one post at a time?"
+    * **For the Challenge:** Suggest challenges that are both analytical and deeply creative. "Could the students be challenged to create a 'time capsule' of their current digital self, meant to be opened in 50 years? What if they had to design an 'Official Archive' of their life, curating their most important digital artifacts? Could they create a piece of art that represents the 'noise' vs. the 'signal' of their online presence?"
 
-2.  **Issues-Stage Guidance:**
-    * Guide the teacher toward research that is both historical and deeply personal.
-    * **Suggest these guiding questions:** "How has propaganda evolved from wartime posters to modern social media algorithms? What is the psychological difference between an 'identity' and a 'brand'? How do the platforms we use (like TikTok vs. LinkedIn) encourage us to perform different versions of ourselves?"
+2.  **Issues-Stage Guidance:**
+    * Guide the research toward the concepts of permanence, narrative, and authenticity.
+    * **Suggest these guiding questions:** "What is the difference between a 'digital footprint' and a 'digital shadow'? How do algorithms on platforms like TikTok or Instagram shape the story you tell about yourself? What does it mean to be 'authentic' online when every post is a performance?"
 
-3.  **Method-Stage Guidance:**
-    * Encourage the creation of sophisticated media products.
-    * **Suggest innovative project outputs:** "Beyond a simple poster, what if the students produced a short documentary analyzing the 'brand' of a public figure? Or created an interactive website that teaches younger students how to spot 'fake news'? Or launched a podcast series on the ethics of influencer culture?"
+3.  **Method-Stage Guidance:**
+    * Encourage the creation of reflective and speculative artifacts.
+    * **Suggest innovative project outputs:** "Instead of an essay, what if the students produced a short, speculative film about someone discovering their 'digital ghost' in the future? Or created an interactive website that serves as a curated personal museum? Could they design a 'Digital Will,' a document that ethically outlines how they want their online presence to be managed after they're gone?"
 
-4.  **Engagement-Stage Guidance:**
-    * Suggest partners who work professionally with narrative and image.
-    * **Propose these partnerships:** "Could the students get feedback on their work from a local journalist, a marketing professional, a graphic designer, or even a political campaign manager? Could they present their findings on media manipulation to a parent group or the school board?"
+4.  **Engagement-Stage Guidance:**
+    * Suggest partners who grapple with legacy, data, and storytelling.
+    * **Propose these partnerships:** "Could the students get feedback on their work from an estate lawyer, a digital archivist from a museum, a data privacy expert, or a biographer? Could they present their findings on digital permanence to parent groups to raise awareness about the digital lives of their children?"
 `;

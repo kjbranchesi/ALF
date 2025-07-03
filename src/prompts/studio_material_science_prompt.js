@@ -1,25 +1,27 @@
-// --- 5. Studio: Material Science ---
+// V4 REWRITE: studio_material_science_prompt.js
+// This prompt has been rewritten to be more hands-on, active, and creative.
+// The title is changed from "Material Science" to "Hacking the Everyday: The Secret Language of Stuff."
 
 export const studioMaterialSciencePrompt = `
-# STUDIO KNOWLEDGE: MATERIAL SCIENCE - THE HIDDEN ARCHITECTURE
+# STUDIO KNOWLEDGE: HACKING THE EVERYDAY - THE SECRET LANGUAGE OF STUFF
 
-**Core Theme:** This studio is an investigation into the secret language of the physical world. It's about understanding that everything around us—from the shirt on our back to the bridge we cross—is a story of materials. This theme challenges students to become material scientists, exploring the relationship between structure and property, from the whisper of a single fiber to the strength of a skyscraper. It's a quest to understand why things hold together, why they fall apart, and how we can build a stronger, more sustainable future.
+**Core Theme:** This studio is about becoming a "material hacker." It's based on the idea that everything in our physical world—from a paperclip to a skyscraper—is speaking a secret language of properties, structures, and systems. To innovate, we must first learn to listen, deconstruct, and understand that language. This theme challenges students to become reverse-engineers and creative scientists, taking everyday objects apart to understand why they work, why they fail, and how they can be reinvented into something entirely new.
 
 **AI Coaching Guidance for This Studio:**
 
-1.  **Catalyst-Stage Guidance:**
-    * **For the Big Idea:** Start with wonder and observation. Ask, "What if we looked at the everyday objects around us with a 'superhero vision' that could see their internal structure? What makes a spider's web stronger than steel? Why is bamboo both flexible and incredibly strong? The big idea here is about the genius of nature and human design."
-    * **For the Challenge:** Suggest challenges that involve hands-on testing and reverse-engineering. "Could the students be challenged to build the strongest possible bridge using only a single material, like paper? Or to design a new material with a specific property, like being both waterproof and breathable?"
+1.  **Catalyst-Stage Guidance:**
+    * **For the Big Idea:** Frame the project as an act of playful deconstruction. Ask: "What if we gave your students permission to break things... on purpose? What are the hidden design secrets inside a disposable coffee cup or a simple zipper? The big idea here is that true invention comes from deep investigation."
+    * **For the Challenge:** Suggest challenges that involve stress-testing and reinvention. "Could the students be challenged to take a common object, analyze its material 'flaws,' and then design a 'Version 2.0' that is stronger, more sustainable, or more beautiful? What if they had to create a brand new material by combining two unlikely existing ones?"
 
-2.  **Issues-Stage Guidance:**
-    * Guide the research toward understanding the "why" behind material properties.
-    * **Suggest these guiding questions:** "What is the difference between tensile strength and compressive strength? How do patterns at a micro-level (like a weave or a crystal lattice) create properties at a macro-level? What is the life cycle of a material—from creation to disposal—and what is its environmental impact?"
+2.  **Issues-Stage Guidance:**
+    * Guide the research toward the fundamental "why" behind material properties.
+    * **Suggest these guiding questions:** "Why is glass both strong and brittle? What makes a material a good conductor of heat? What is the 'recipe' for concrete, and how could we change it? What is the full lifecycle of a plastic bottle, from oil rig to ocean gyre?"
 
-3.  **Method-Stage Guidance:**
-    * Encourage a process of rigorous testing, data collection, and iteration.
-    * **Suggest innovative project outputs:** "What if the students' project culminated in a 'Materials Olympics,' where they test their creations for strength, flexibility, and durability? Could they create a video documentary in the style of 'How It's Made' for a material they invent? Could they use digital microscopes to document and analyze the structures they are testing?"
+3.  **Method-Stage Guidance:**
+    * Encourage a culture of rigorous, hands-on testing and data collection.
+    * **Suggest innovative project outputs:** "What if the project culminated in a 'Materials Showdown,' where students stress-test their invented materials to destruction? Could they create a 'forensic report' for a broken object, detailing why and how it failed? Could they use time-lapse photography to document the decay of different materials?"
 
-4.  **Engagement-Stage Guidance:**
-    * Suggest partners who work with materials in interesting ways.
-    * **Propose these partnerships:** "Could the students be mentored by a local architect, a civil engineer, a fashion designer, or even a chef who understands the material properties of food? Could they present their findings to a university's material science department or a local manufacturing company?"
+4.  **Engagement-Stage Guidance:**
+    * Suggest partners who are masters of manipulating materials.
+    * **Propose these partnerships:** "Could the students be mentored by a chef who understands food science, a sculptor who works with metal, a fashion designer who understands textiles, or a mechanical engineer from a local factory? Could they present their findings to a product design firm?"
 `;
