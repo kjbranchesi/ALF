@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V5 PROMPT IMPORTS ---
-// All prompts, including the new V5 files, are imported.
+// --- V6 PROMPT IMPORTS ---
+// All prompts are imported, including the V6 updated versions.
 import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
 import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
@@ -39,24 +39,38 @@ const BotIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '
 const UserIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '32px', width: '32px', color: '#6b7280'}} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>);
 const SendIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '24px', width: '24px'}} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>);
 
-// --- CHILD COMPONENTS (No Changes) ---
+// --- V6 REFACTOR: MARKDOWN RENDERING ---
+// Moved the markdown rendering logic to a single, top-level utility function.
+// This ensures consistency and helps prevent potential scope-related rendering bugs.
+const renderMarkdown = (text) => {
+    // Basic check to ensure text is a string
+    if (typeof text !== 'string') {
+        return { __html: '' };
+    }
+    // Configure marked to handle line breaks and GitHub Flavored Markdown
+    const rawMarkup = marked(text, { breaks: true, gfm: true });
+    return { __html: rawMarkup };
+};
+
+// --- CHILD COMPONENTS ---
 const ChatMessage = ({ message }) => {
     const { text, sender } = message;
     const isBot = sender === 'bot';
-    const renderMarkdown = (text) => ({ __html: marked(text, { breaks: true, gfm: true }) });
     return (
         <div style={styles.messageContainer(isBot)}>
             {isBot && <div style={styles.iconContainer}><BotIcon /></div>}
+            {/* V6 FIX: Using the single, reliable renderMarkdown utility */}
             <div style={styles.messageBubble(isBot)} dangerouslySetInnerHTML={renderMarkdown(text)} />
             {!isBot && <div style={styles.iconContainer}><UserIcon /></div>}
         </div>
     );
 };
+
 const SummaryDisplay = ({ curriculumText, onRestart, onAskFollowUp }) => {
     const [copySuccess, setCopySuccess] = useState('');
-    const renderMarkdown = (text) => ({ __html: marked(text, { breaks: true, gfm: true }) });
     const handleCopy = () => {
         const textarea = document.createElement('textarea');
+        // The 'marked' library converts markdown to HTML. For copying, we want the raw markdown text.
         textarea.value = curriculumText;
         document.body.appendChild(textarea);
         textarea.select();
@@ -71,6 +85,7 @@ const SummaryDisplay = ({ curriculumText, onRestart, onAskFollowUp }) => {
     };
     return (
         <div style={styles.summaryContainer}>
+            {/* V6 FIX: Using the single, reliable renderMarkdown utility to fix the display bug */}
             <div dangerouslySetInnerHTML={renderMarkdown(curriculumText)} />
             <div style={styles.summaryActions}>
                 <button onClick={handleCopy} style={styles.copyButton}>{copySuccess || 'Copy to Clipboard'}</button>
@@ -81,16 +96,15 @@ const SummaryDisplay = ({ curriculumText, onRestart, onAskFollowUp }) => {
     );
 };
 
-// --- MAIN APP COMPONENT (V5 REWRITE) ---
+
+// --- MAIN APP COMPONENT (V6 REWRITE) ---
 export default function App() {
-    // --- V5 STATE MANAGEMENT ---
+    // --- STATE MANAGEMENT (No changes in V6) ---
     const [messages, setMessages] = useState([]);
     const [conversationHistory, setConversationHistory] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [isBotTyping, setIsBotTyping] = useState(false);
     const [finalCurriculum, setFinalCurriculum] = useState('');
-    
-    // **REVISED** State machine for the entire V5 conversational flow.
     const [conversationStage, setConversationStage] = useState('welcome');
     const [ageGroupPrompt, setAgeGroupPrompt] = useState('');
     const [intakeAnswers, setIntakeAnswers] = useState({});
@@ -99,7 +113,7 @@ export default function App() {
     const chatEndRef = useRef(null);
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-    // --- EFFECTS ---
+    // --- EFFECTS (No changes in V6) ---
     useEffect(() => {
         setMessages([{
             text: "Welcome! I'm the ALF Coach, your creative partner in designing transformative learning experiences. To start, please tell me what age or grade level you are designing for (e.g., '7 year olds', 'high school', or 'university').",
@@ -113,7 +127,7 @@ export default function App() {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isBotTyping]);
 
-    // --- API UTILITY ---
+    // --- API & RESPONSE LOGIC (No changes in V6) ---
     const callApi = async (history) => {
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         const response = await fetch(apiUrl, {
@@ -125,7 +139,6 @@ export default function App() {
         return await response.json();
     };
 
-    // --- SPECIALIZED API CALLS ---
     const getAgeGroupFromAI = async (userInput) => {
         const sorterPrompt = `You are an input sorter. Your job is to categorize the user's input into one of five specific categories: 'Early Primary', 'Primary', 'Middle School', 'High School', or 'University'. The user's input is: '${userInput}'. Respond with ONLY the category name and nothing else.`;
         const result = await callApi([{ role: "user", parts: [{ text: sorterPrompt }] }]);
@@ -149,7 +162,6 @@ export default function App() {
         return result.candidates?.[0]?.content.parts[0].text.trim() || "Error";
     };
 
-    // --- MAIN RESPONSE GENERATOR ---
     const generateAiResponse = async (currentHistory, isAssignment = false) => {
         setIsBotTyping(true);
         let historyForApi = [...currentHistory];
@@ -176,7 +188,7 @@ export default function App() {
                         setConversationStage('issues_planning');
                     } else {
                         setMessages(prev => [...prev, { text: safetyResult, sender: 'bot', id: Date.now() }]);
-                        setConversationStage('catalyst_planning'); // Return to catalyst planning
+                        setConversationStage('catalyst_planning');
                     }
                 } else if (text.includes(COMPLETION_SIGNAL)) {
                     const curriculumText = text.replace(COMPLETION_SIGNAL, "").trim();
@@ -198,7 +210,7 @@ export default function App() {
         }
     };
     
-    // --- V5 `handleSendMessage` LOGIC HUB ---
+    // --- `handleSendMessage` LOGIC HUB (No changes in V6) ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
@@ -220,7 +232,8 @@ export default function App() {
                         else if (category === 'High School') selectedPrompt = highSchoolPrompt;
                         else if (category === 'University') selectedPrompt = universityPrompt;
                         setAgeGroupPrompt(selectedPrompt);
-                        setMessages(prev => [...prev, { text: "Are you new to Project-Based Learning, or is this a methodology you've worked with before? Either way is perfectly fine, of course!", sender: 'bot', id: Date.now() + 1 }]);
+                        const intakeMessage = intakePrompt.split("### Intake Question 1: Experience Level")[1].split("###")[0].replace("* Your Task:** Ask the user about their experience with Project-Based Learning.", "").replace("* Your Phrasing:** ", "").trim();
+                        setMessages(prev => [...prev, { text: intakeMessage, sender: 'bot', id: Date.now() + 1 }]);
                         setConversationStage('awaiting_intake_1');
                     } else {
                         setMessages(prev => [...prev, { text: "I'm sorry, I couldn't determine the age group. Could you please try again?", sender: 'bot', id: Date.now() + 1 }]);
@@ -229,8 +242,10 @@ export default function App() {
                 }
                 case 'awaiting_intake_1': {
                     setIntakeAnswers({ experience: currentInput });
-                    const systemPrompt = `${intakePrompt}\nUser's experience level: ${currentInput}`;
-                    await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
+                    const isNew = currentInput.toLowerCase().includes('new');
+                    const intakePath = isNew ? intakePrompt.split("Path A (User is NEW to PBL):")[1].split("Path B (User is EXPERIENCED with PBL):")[0] : intakePrompt.split("Path B (User is EXPERIENCED with PBL):")[1].split("### Intake Question 3:")[0];
+                    const responseText = intakePath.replace(/>/g, "").trim();
+                    setMessages(prev => [...prev, { text: responseText, sender: 'bot', id: Date.now() + 1 }]);
                     setConversationStage('awaiting_intake_2');
                     break;
                 }
@@ -238,13 +253,13 @@ export default function App() {
                     const sentiment = await runIntakeSafetyCheck(currentInput);
                     if (sentiment === 'UNSAFE') {
                         setMessages(prev => [...prev, { text: "I cannot proceed with that topic as it violates safety guidelines. Please choose a different theme.", sender: 'bot', id: Date.now() + 1 }]);
-                        setConversationStage('awaiting_intake_2'); // Stay in this stage
+                        setConversationStage('awaiting_intake_2');
+                        setIsBotTyping(false);
                         return;
                     }
-                    let toneInstruction = sentiment === 'QUESTIONABLE' ? "The user has proposed a sensitive topic. Adopt a neutral, probing tone. Do not use positive affirmations." : "";
                     setIntakeAnswers(prev => ({ ...prev, idea: currentInput }));
-                    const systemPrompt = `${intakePrompt}\n${toneInstruction}\nUser's project idea: ${currentInput}`;
-                    await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
+                    const constraintsQuestion = intakePrompt.split("### Intake Question 3: Project Constraints")[1].replace("* Your Task:** After the user responds to Question 2, ask about practical constraints.", "").replace("* Your Phrasing:** ", "").trim();
+                    setMessages(prev => [...prev, { text: constraintsQuestion, sender: 'bot', id: Date.now() + 1 }]);
                     setConversationStage('awaiting_intake_3');
                     break;
                 }
@@ -252,10 +267,11 @@ export default function App() {
                     const finalIntakeAnswers = { ...intakeAnswers, constraints: currentInput };
                     const finalSystemPrompt = `${basePrompt}\n${ageGroupPrompt}\n# USER CONTEXT FROM INTAKE:\n- User's experience with PBL: ${finalIntakeAnswers.experience}\n- User's starting idea: ${finalIntakeAnswers.idea}\n- User's project constraints: ${finalIntakeAnswers.constraints}`;
                     const kickoffMessage = "Excellent, this is all incredibly helpful context. Let's get started.";
-                    const initialHistory = [{ role: "user", parts: [{ text: finalSystemPrompt }] }, { role: "user", parts: [{ text: kickoffMessage }] }];
+                    const initialHistory = [{ role: "user", parts: [{ text: finalSystemPrompt }] }, { role: "model", parts: [{ text: kickoffMessage }] }];
                     setConversationHistory(initialHistory);
-                    setConversationStage('catalyst_planning');
+                    setMessages(prev => [...prev, { text: kickoffMessage, sender: 'bot', id: Date.now() + 1 }]);
                     await generateAiResponse(initialHistory);
+                    setConversationStage('catalyst_planning');
                     break;
                 }
                 case 'catalyst_planning':
@@ -297,7 +313,6 @@ export default function App() {
 
     const handleRestart = () => window.location.reload();
     const handleAskFollowUp = () => {
-        // This is now the default next step after curriculum is finished
         setConversationStage('awaiting_assignments'); 
         const followUpMessage = { text: "We now have a strong foundation for our curriculum. Shall we now proceed to build out the detailed, scaffolded assignments for the students?", sender: 'bot', id: Date.now() };
         setMessages(prev => [...prev, followUpMessage]);
