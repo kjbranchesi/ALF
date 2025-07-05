@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V7.2 PROMPT IMPORTS ---
+// --- V8 PROMPT IMPORTS ---
 import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
 import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
@@ -56,7 +56,7 @@ const ChatMessage = ({ message }) => {
 };
 
 
-// --- MAIN APP COMPONENT (V7.2 REWRITE) ---
+// --- MAIN APP COMPONENT (V8 REWRITE) ---
 export default function App() {
     // --- STATE MANAGEMENT ---
     const [messages, setMessages] = useState([]);
@@ -64,6 +64,7 @@ export default function App() {
     const [inputValue, setInputValue] = useState('');
     const [isBotTyping, setIsBotTyping] = useState(false);
     const [conversationStage, setConversationStage] = useState('welcome');
+    const [ageGroup, setAgeGroup] = useState(''); // V8: Store the age group string
     const [ageGroupPrompt, setAgeGroupPrompt] = useState('');
     const [intakeAnswers, setIntakeAnswers] = useState({});
     const [finalCurriculumText, setFinalCurriculumText] = useState('');
@@ -120,15 +121,11 @@ export default function App() {
         return result.candidates?.[0]?.content.parts[0].text.trim() || "Error";
     };
 
-    const generateAiResponse = async (currentHistory, isAssignment = false) => {
+    const generateAiResponse = async (currentHistory) => {
         setIsBotTyping(true);
-        let historyForApi = [...currentHistory];
-        if (isAssignment) {
-            historyForApi.unshift({ role: "user", parts: [{ text: assignmentGeneratorPrompt }] });
-        }
         try {
-            const result = await callApi(historyForApi);
-            if (result.candidates && result.candidates.length > 0) {
+            const result = await callApi(currentHistory);
+            if (result.candidates && result.candidates[0].content) {
                 let text = result.candidates[0].content.parts[0].text;
                 const newHistory = [...currentHistory, { role: "model", parts: [{ text }] }];
                 setConversationHistory(newHistory);
@@ -155,7 +152,7 @@ export default function App() {
                     const assignmentOffer = { text: "We now have a strong foundation for our curriculum. Shall we now proceed to build out the detailed, scaffolded assignments for the students?", sender: 'bot', id: Date.now() + 1 };
                     
                     setMessages(prev => [...prev, curriculumMessage, assignmentOffer]);
-                    setConversationStage('awaiting_assignments');
+                    setConversationStage('awaiting_assignments_confirmation');
                 } else {
                     setMessages(prev => [...prev, { text, sender: 'bot', id: Date.now() }]);
                 }
@@ -172,7 +169,7 @@ export default function App() {
         }
     };
     
-    // --- `handleSendMessage` LOGIC HUB (V7.2 REWRITE) ---
+    // --- `handleSendMessage` LOGIC HUB (V8 REWRITE) ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
@@ -190,6 +187,7 @@ export default function App() {
                 case 'select_age': {
                     const category = await getAgeGroupFromAI(currentInput);
                     if (category) {
+                        setAgeGroup(category); // V8: Store the age group string
                         let selectedPrompt = '';
                         if (category === 'Early Primary') selectedPrompt = earlyPrimaryPrompt;
                         else if (category === 'Primary') selectedPrompt = primaryPrompt;
@@ -249,19 +247,23 @@ export default function App() {
                     setConversationStage('catalyst_planning');
                     break;
                 }
-                case 'awaiting_assignments': {
+                // V8: New collaborative assignment workflow stages
+                case 'awaiting_assignments_confirmation': {
                     if (currentInput.toLowerCase().includes('yes')) {
-                        setConversationStage('generating_assignments');
-                        const assignmentHistory = [{
-                            role: "user",
-                            parts: [{ text: `Here is the curriculum we designed:\n\n${finalCurriculumText}` }]
-                        }];
-                        await generateAiResponse(assignmentHistory, true);
+                        setConversationStage('designing_assignments_intro');
+                        const systemPrompt = `${assignmentGeneratorPrompt}\n\nHere is the curriculum we designed:\n\n${finalCurriculumText}\n\nNow, begin the assignment design workflow. Start with Step 1: Propose the Scaffolding Strategy for the ${ageGroup} age group.`;
+                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
                     } else {
                         setMessages(prev => [...prev, { text: "No problem! Feel free to ask any other follow-up questions.", sender: 'bot', id: Date.now() + 1 }]);
                         setConversationStage('follow_up');
                         setIsBotTyping(false);
                     }
+                    break;
+                }
+                case 'designing_assignments_intro':
+                case 'designing_assignments_main': {
+                    setConversationStage('designing_assignments_main');
+                    await generateAiResponse(updatedHistory);
                     break;
                 }
                 default: {
