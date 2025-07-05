@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V7.4 PROMPT IMPORTS (No Changes for V8) ---
+// --- V8.1 PROMPT IMPORTS ---
+// These prompts work with the new V8.1 logic.
 import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
 import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
@@ -86,7 +87,7 @@ const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
 };
 
 
-// --- MAIN APP COMPONENT (V8 REWRITE) ---
+// --- MAIN APP COMPONENT (V8.1 REWRITE) ---
 export default function App() {
     // --- STATE MANAGEMENT ---
     const [messages, setMessages] = useState([]);
@@ -100,10 +101,7 @@ export default function App() {
     const [finalCurriculumText, setFinalCurriculumText] = useState('');
     const [generatedAssignments, setGeneratedAssignments] = useState([]);
     const [finalProjectDocument, setFinalProjectDocument] = useState('');
-    
-    // --- V8 ADDITION: SHORT-TERM MEMORY ---
     const [sessionSummary, setSessionSummary] = useState('');
-    // --- END V8 ADDITION ---
 
     const chatEndRef = useRef(null);
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -157,7 +155,6 @@ export default function App() {
         return result.candidates?.[0]?.content.parts[0].text.trim() || "Error";
     };
 
-    // --- V8 ADDITION: AUTO-SUMMARIZATION LAYER ---
     const summarizeKeyDecisions = async (historyForSummary) => {
         const summarizationPrompt = `
             Concisely summarize the key decisions from this conversation history in a single sentence. 
@@ -167,40 +164,33 @@ export default function App() {
             Here is the conversation history:
             ${JSON.stringify(historyForSummary)}
         `;
-
         try {
             const summaryResult = await callApi([{ role: "user", parts: [{ text: summarizationPrompt }] }]);
             if (summaryResult.candidates && summaryResult.candidates[0].content) {
                 const newSummary = summaryResult.candidates[0].content.parts[0].text.trim();
-                setSessionSummary(newSummary); // Update our session summary state
-                console.log("V8 MEMORY SET:", newSummary); // For debugging
+                setSessionSummary(newSummary);
+                console.log("V8 MEMORY SET:", newSummary);
                 return newSummary;
             }
         } catch (error) {
             console.error("V8 Error during summarization:", error);
-            // Don't interrupt the user flow, just log the error and continue.
         }
-        return ''; // Return empty string if summarization fails
+        return '';
     };
-    // --- END V8 ADDITION ---
 
     const generateAiResponse = async (currentHistory, useSummary = true) => {
         setIsBotTyping(true);
-
-        // --- V8 MODIFICATION: PREPEND SUMMARY TO HISTORY ---
         let historyToSend = [...currentHistory];
         if (useSummary && sessionSummary) {
             const summaryInstruction = { 
                 role: "user", 
                 parts: [{ text: `# CONTEXT\nHere is a summary of our key decisions so far: "${sessionSummary}". Keep this context in mind as you respond.` }]
             };
-            // Insert the summary instruction before the latest user message for maximum relevance.
             historyToSend.splice(historyToSend.length - 1, 0, summaryInstruction);
         }
-        // --- END V8 MODIFICATION ---
 
         try {
-            const result = await callApi(historyToSend); // V8: Use the potentially modified history
+            const result = await callApi(historyToSend);
             if (result.candidates && result.candidates[0].content) {
                 let text = result.candidates[0].content.parts[0].text;
                 const newHistory = [...currentHistory, { role: "model", parts: [{ text }] }];
@@ -224,24 +214,15 @@ export default function App() {
                 } else if (text.includes(COMPLETION_SIGNAL)) {
                     const curriculumText = text.replace(COMPLETION_SIGNAL, "").trim();
                     setFinalCurriculumText(curriculumText);
-                    
-                    // --- V8 MODIFICATION: TRIGGER SUMMARIZATION ---
-                    // We summarize the history up to this point to create our memory.
                     await summarizeKeyDecisions(newHistory); 
-                    // --- END V8 MODIFICATION ---
-                    
                     const curriculumMessage = { text: curriculumText, sender: 'bot', id: Date.now() };
-                    // V7 GUARANTEED WORKFLOW: This logic remains unchanged and is crucial for non-regression.
                     const assignmentOffer = { text: "We now have a strong foundation for our curriculum. Shall we now proceed to build out the detailed, scaffolded assignments for the students?", sender: 'bot', id: Date.now() + 1 };
-                    
                     setMessages(prev => [...prev, curriculumMessage, assignmentOffer]);
                     setConversationStage('awaiting_assignments_confirmation');
-
                 } else if (text.includes(ASSIGNMENTS_COMPLETE_SIGNAL)) {
                     const lastAssignmentText = text.replace(ASSIGNMENTS_COMPLETE_SIGNAL, "").trim();
                     const allAssignments = [...generatedAssignments, lastAssignmentText].join('\n\n');
                     const fullDocument = `${finalCurriculumText}\n\n---\n\n## Scaffolded Assignments\n\n${allAssignments}`;
-                    
                     setFinalProjectDocument(fullDocument);
                     setConversationStage('finished_project');
                 }
@@ -264,7 +245,7 @@ export default function App() {
         }
     };
     
-    // --- `handleSendMessage` LOGIC HUB (V8 REWRITE) ---
+    // --- `handleSendMessage` LOGIC HUB (V8.1 REWRITE) ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
@@ -292,7 +273,6 @@ export default function App() {
                         setAgeGroupPrompt(selectedPrompt);
                         
                         const systemPrompt = `${intakePrompt}\nAsk Intake Question 1.`;
-                        // V8: Pass 'false' during intake so it doesn't use the (empty) summary
                         await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }], false);
                         setConversationStage('awaiting_intake_1');
                     } else {
@@ -304,15 +284,31 @@ export default function App() {
                 case 'awaiting_intake_1': {
                     setIntakeAnswers({ experience: currentInput });
                     const systemPrompt = `${intakePrompt}\nThe user has responded to Question 1. Their experience level is: '${currentInput}'. Now, follow your protocol to provide the correct pedagogical onboarding (Path A or B) and ask Question 2.`;
-                    // V8: Pass 'false' during intake
                     await generateAiResponse(updatedHistory, false);
                     setConversationStage('awaiting_intake_2');
                     break;
                 }
                 case 'awaiting_intake_2': {
+                    // --- V8.1 FIX: Handle "no idea" case before safety check ---
+                    const lowerCaseInput = currentInput.toLowerCase();
+                    const needsIdeas = ['no', 'not yet', 'don\'t know', 'need help', 'need ideas', 'explore'].some(term => lowerCaseInput.includes(term));
+
+                    if (needsIdeas) {
+                        setIntakeAnswers(prev => ({ ...prev, idea: 'User needs help brainstorming' }));
+                        const systemPrompt = `${intakePrompt}\nThe user has indicated they need help brainstorming a topic. Follow Path C.`;
+                        // We don't need to add to history here, just trigger the new path.
+                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }], false);
+                        // We stay in 'awaiting_intake_2' because the next user message will be their choice of topic.
+                        // After they choose, the logic will fall through this 'if' block on the next turn.
+                        return; // Exit the switch case here to await user's choice
+                    }
+                    // --- END V8.1 FIX ---
+
+                    // If the user provided a topic, proceed with the safety check as before.
                     const sentiment = await runIntakeSafetyCheck(currentInput);
                     if (sentiment === 'UNSAFE') {
                         setMessages(prev => [...prev, { text: "I cannot proceed with that topic as it violates safety guidelines. Please choose a different theme.", sender: 'bot', id: Date.now() + 1 }]);
+                        // Stay in this stage to allow user to provide a new topic
                         setConversationStage('awaiting_intake_2');
                         setIsBotTyping(false);
                         return;
@@ -325,8 +321,7 @@ export default function App() {
                         systemInstruction = `# SPECIAL INSTRUCTION: The user has proposed a sensitive topic. Adopt a neutral, probing tone as you ask the next question. Do not use positive affirmations.\n\n${intakePrompt}`;
                     }
                     
-                    const systemPrompt = `${systemInstruction}\nThe user has responded to Question 2. Their idea is: '${currentInput}'. Follow your protocol and ask Question 3.`;
-                    // V8: Pass 'false' during intake
+                    const systemPrompt = `${systemInstruction}\nThe user has responded to Question 2 with a topic. Their idea is: '${currentInput}'. Follow your protocol and ask Question 3.`;
                     await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }], false);
                     setConversationStage('awaiting_intake_3');
                     break;
@@ -341,41 +336,36 @@ export default function App() {
                     const initialHistory = [{ role: "user", parts: [{ text: finalSystemPrompt }] }, { role: "model", parts: [{ text: kickoffMessage }] }];
                     setConversationHistory(initialHistory);
                     
-                    // V8: Pass 'false' for the very first real turn, as there's nothing to summarize yet.
                     await generateAiResponse(initialHistory, false);
                     setConversationStage('catalyst_planning');
                     break;
                 }
-                // V8: All subsequent stages will now automatically use the summary by default.
                 case 'awaiting_assignments_confirmation': {
                     if (currentInput.toLowerCase().includes('yes')) {
                         setConversationStage('designing_assignments_intro');
                         const systemPrompt = `${assignmentGeneratorPrompt}\n\nHere is the curriculum we designed:\n\n${finalCurriculumText}\n\nNow, begin the assignment design workflow. Start with Step 1: Propose the Scaffolding Strategy for the ${ageGroup} age group.`;
-                        // The summary will now be automatically prepended here.
                         await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
                     } else {
                         setMessages(prev => [...prev, { text: "No problem! Feel free to ask any other follow-up questions.", sender: 'bot', id: Date.now() + 1 }]);
                         setConversationStage('follow_up');
-                        setIsBotyping(false);
+                        setIsBotTyping(false);
                     }
                     break;
                 }
                 case 'designing_assignments_intro':
                 case 'designing_assignments_main': {
                     setConversationStage('designing_assignments_main');
-                    // The summary will now be automatically prepended here.
                     await generateAiResponse(updatedHistory);
                     break;
                 }
                 default: {
-                    // The summary will now be automatically prepended here.
                     await generateAiResponse(updatedHistory);
                 }
             }
         } catch (error) {
             console.error("Error in handleSendMessage:", error);
             setMessages(prev => [...prev, { text: "An unexpected error occurred. Please try again.", sender: 'bot', id: Date.now() }]);
-            setIsBotyping(false);
+            setIsBotTyping(false);
         }
     };
 
