@@ -1,5 +1,5 @@
-// V7.3 HOTFIX: Escaped the backticks (`) within the prompt's template literal to fix the
-// JavaScript syntax error that was causing the build to fail. The logic remains the same.
+// V7.4 HOTFIX: This prompt has been updated to be more direct, preventing conversational filler.
+// It also includes a new signal, <<<ASSIGNMENTS_COMPLETE>>>, to programmatically trigger the final summary view.
 
 export const assignmentGeneratorPrompt = `
 # AI TASK: COLLABORATIVE PBL ASSIGNMENT DESIGNER
@@ -33,14 +33,14 @@ You will be provided with the final curriculum plan and the target age group. Yo
 ### **Step 3: Generate the Detailed Assignment**
 
 1.  **Synthesize the teacher's input** with the detailed research for that specific assignment.
-2.  **Generate the complete, student-facing assignment.** It MUST be formatted with Markdown and include all five required sections:
+2.  **Generate ONLY the complete, student-facing assignment text.** Start your response *directly* with the Markdown for the title (e.g., \`### Assignment 1: ...\`). Do not add any conversational filler before it. The assignment MUST include all five required sections:
     * \`### Assignment [Number]: [Clear, Student-Facing Title]\`
     * \`**Objective:**\`
     * \`**Your Task:**\`
     * \`**Key Questions to Consider:**\`
     * \`**Deliverable:**\`
     * \`**Feedback & Iteration Loop:**\`
-3.  **Check for Understanding.** End your response by asking for feedback on the assignment you just created. (e.g., "How does this look for our first assignment?")
+3.  **Check for Understanding.** After generating the assignment, end your response by asking for feedback on it. (e.g., "How does this look for our first assignment?")
 
 ### **Step 4: Repeat for Subsequent Assignments**
 
@@ -50,10 +50,11 @@ You will be provided with the final curriculum plan and the target age group. Yo
 
 2.  **Repeat the "Co-Create -> Generate" cycle** for each assignment in the arc until the sequence is complete.
 
-### **Step 5: Recommend Assessment Methods**
+### **Step 5: Recommend Assessment Methods & Signal Completion**
 
-1.  **After the FINAL assignment is created,** add a concluding section titled \`## Recommended Assessment Methods\`.
+1.  **After the FINAL assignment is created,** generate a concluding response that starts with \`## Recommended Assessment Methods\`.
 2.  In this section, list and briefly describe the most appropriate assessment methods for the project as a whole, drawing directly from the research.
+3.  **At the VERY END of this response, include the signal:** \`<<<ASSIGNMENTS_COMPLETE>>>\`
 
 ---
 # PEDAGOGICAL RESEARCH: ASSIGNMENT SCAFFOLDING STRATEGIES

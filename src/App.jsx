@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V7.3 PROMPT IMPORTS ---
+// --- V7.4 PROMPT IMPORTS ---
 import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
 import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
@@ -30,6 +30,10 @@ const styles = {
   messageContainer: (isBot) => ({ display: 'flex', alignItems: 'flex-start', gap: '12px', margin: '16px 0', justifyContent: isBot ? 'flex-start' : 'flex-end' }),
   iconContainer: { flexShrink: 0, backgroundColor: '#e5e7eb', borderRadius: '50%', padding: '8px' },
   messageBubble: (isBot) => ({ maxWidth: '80%', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', backgroundColor: isBot ? '#eef2ff' : 'white', color: '#1f2937', wordWrap: 'break-word', borderTopLeftRadius: isBot ? '0px' : '12px', borderTopRightRadius: isBot ? '12px' : '0px', lineHeight: 1.7 }),
+  // V7.4: Styles for the final summary display
+  summaryContainer: { backgroundColor: 'white', padding: '32px', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' },
+  summaryActions: { marginTop: '24px', display: 'flex', gap: '12px' },
+  actionButton: { flex: 1, backgroundColor: '#6b7280', color: 'white', fontWeight: 'bold', padding: '12px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', transition: 'background-color 0.2s' },
 };
 const BotIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '32px', width: '32px', color: '#4f46e5'}} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>);
 const UserIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '32px', width: '32px', color: '#6b7280'}} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>);
@@ -42,7 +46,7 @@ const renderMarkdown = (text) => {
     return { __html: rawMarkup };
 };
 
-// --- CHILD COMPONENT ---
+// --- CHILD COMPONENTS ---
 const ChatMessage = ({ message }) => {
     const { text, sender } = message;
     const isBot = sender === 'bot';
@@ -55,8 +59,36 @@ const ChatMessage = ({ message }) => {
     );
 };
 
+// V7.4: Re-introduced the summary display for the final, combined document.
+const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
+    const [copySuccess, setCopySuccess] = useState('');
+    const handleCopy = () => {
+        const textarea = document.createElement('textarea');
+        textarea.value = finalDocument;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            setCopySuccess('Copied!');
+            setTimeout(() => setCopySuccess(''), 2000);
+        } catch (err) {
+            setCopySuccess('Failed to copy');
+        }
+        document.body.removeChild(textarea);
+    };
+    return (
+        <div style={styles.summaryContainer}>
+            <div dangerouslySetInnerHTML={renderMarkdown(finalDocument)} />
+            <div style={styles.summaryActions}>
+                <button onClick={handleCopy} style={styles.actionButton}>{copySuccess || 'Copy to Clipboard'}</button>
+                <button onClick={onRestart} style={styles.actionButton}>Start New Plan</button>
+            </div>
+        </div>
+    );
+};
 
-// --- MAIN APP COMPONENT (V7.3 REWRITE) ---
+
+// --- MAIN APP COMPONENT (V7.4 REWRITE) ---
 export default function App() {
     // --- STATE MANAGEMENT ---
     const [messages, setMessages] = useState([]);
@@ -68,6 +100,9 @@ export default function App() {
     const [ageGroupPrompt, setAgeGroupPrompt] = useState('');
     const [intakeAnswers, setIntakeAnswers] = useState({});
     const [finalCurriculumText, setFinalCurriculumText] = useState('');
+    // V7.4: New state to hold generated assignments and the final combined document
+    const [generatedAssignments, setGeneratedAssignments] = useState([]);
+    const [finalProjectDocument, setFinalProjectDocument] = useState('');
 
     const chatEndRef = useRef(null);
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -132,6 +167,7 @@ export default function App() {
                 
                 const CATALYST_SIGNAL = "<<<CATALYST_DEFINED>>>";
                 const COMPLETION_SIGNAL = "<<<CURRICULUM_COMPLETE>>>";
+                const ASSIGNMENTS_COMPLETE_SIGNAL = "<<<ASSIGNMENTS_COMPLETE>>>";
 
                 if (text.includes(CATALYST_SIGNAL)) {
                     const summary = text.replace(CATALYST_SIGNAL, "").trim();
@@ -153,7 +189,20 @@ export default function App() {
                     
                     setMessages(prev => [...prev, curriculumMessage, assignmentOffer]);
                     setConversationStage('awaiting_assignments_confirmation');
-                } else {
+                } else if (text.includes(ASSIGNMENTS_COMPLETE_SIGNAL)) {
+                    // V7.4: Compile and display the final document
+                    const lastAssignmentText = text.replace(ASSIGNMENTS_COMPLETE_SIGNAL, "").trim();
+                    const allAssignments = [...generatedAssignments, lastAssignmentText].join('\n\n');
+                    const fullDocument = `${finalCurriculumText}\n\n---\n\n## Scaffolded Assignments\n\n${allAssignments}`;
+                    
+                    setFinalProjectDocument(fullDocument);
+                    setConversationStage('finished_project');
+                }
+                else {
+                    // V7.4: If in assignment design, add the text to our list
+                    if (conversationStage === 'designing_assignments_main') {
+                        setGeneratedAssignments(prev => [...prev, text]);
+                    }
                     setMessages(prev => [...prev, { text, sender: 'bot', id: Date.now() }]);
                 }
             } else {
@@ -169,7 +218,7 @@ export default function App() {
         }
     };
     
-    // --- `handleSendMessage` LOGIC HUB (V7.3 REWRITE) ---
+    // --- `handleSendMessage` LOGIC HUB (V7.4 REWRITE) ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
@@ -229,7 +278,6 @@ export default function App() {
                     }
                     
                     const systemPrompt = `${systemInstruction}\nThe user has responded to Question 2. Their idea is: '${currentInput}'. Follow your protocol and ask Question 3.`;
-                    // V7.3 HOTFIX: Pass only the specific prompt, not the whole history, to prevent the AI from seeing its own safety check response.
                     await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
                     setConversationStage('awaiting_intake_3');
                     break;
@@ -251,7 +299,6 @@ export default function App() {
                 case 'awaiting_assignments_confirmation': {
                     if (currentInput.toLowerCase().includes('yes')) {
                         setConversationStage('designing_assignments_intro');
-                        // V7.3 HOTFIX: Pass the age group explicitly to the prompt context.
                         const systemPrompt = `${assignmentGeneratorPrompt}\n\nHere is the curriculum we designed:\n\n${finalCurriculumText}\n\nNow, begin the assignment design workflow. Start with Step 1: Propose the Scaffolding Strategy for the ${ageGroup} age group.`;
                         await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
                     } else {
@@ -289,32 +336,41 @@ export default function App() {
             </header>
             <main style={styles.mainContent}>
                 <div style={styles.contentWrapper}>
-                    {messages.map((msg) => (<ChatMessage key={msg.id} message={msg} />))}
-                    {isBotTyping && (
-                        <div style={styles.messageContainer(true)}>
-                            <div style={styles.iconContainer}><BotIcon /></div>
-                            <div style={styles.messageBubble(true)}>
-                                <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
-                                    <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out'}}></span>
-                                    <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out .25s'}}></span>
-                                    <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out .5s'}}></span>
+                    {conversationStage === 'finished_project' ? (
+                        <FinalProjectDisplay finalDocument={finalProjectDocument} onRestart={handleRestart} />
+                    ) : (
+                        <>
+                            {messages.map((msg) => (<ChatMessage key={msg.id} message={msg} />))}
+                            {isBotTyping && (
+                                <div style={styles.messageContainer(true)}>
+                                    <div style={styles.iconContainer}><BotIcon /></div>
+                                    <div style={styles.messageBubble(true)}>
+                                        <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
+                                            <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out'}}></span>
+                                            <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out .25s'}}></span>
+                                            <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out .5s'}}></span>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
+                            )}
+                            <div ref={chatEndRef} />
+                        </>
                     )}
-                    <div ref={chatEndRef} />
                 </div>
             </main>
-            <footer style={styles.footer}>
-                <div style={styles.contentWrapper}>
-                    <div style={styles.inputArea}>
-                        <textarea value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyPress={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())} placeholder="Type your response here..." style={styles.textarea} disabled={isBotTyping} />
-                        <button onClick={handleSendMessage} disabled={!inputValue.trim() || isBotTyping} style={{...styles.sendButton, ...(isBotTyping || !inputValue.trim() ? styles.sendButtonDisabled : {})}}>
-                            <SendIcon />
-                        </button>
+            {/* V7.4: Hide the input footer when the final project is displayed */}
+            {conversationStage !== 'finished_project' && (
+                <footer style={styles.footer}>
+                    <div style={styles.contentWrapper}>
+                        <div style={styles.inputArea}>
+                            <textarea value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyPress={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())} placeholder="Type your response here..." style={styles.textarea} disabled={isBotTyping} />
+                            <button onClick={handleSendMessage} disabled={!inputValue.trim() || isBotTyping} style={{...styles.sendButton, ...(isBotTyping || !inputValue.trim() ? styles.sendButtonDisabled : {})}}>
+                                <SendIcon />
+                            </button>
+                        </div>
                     </div>
-                </div>
-            </footer>
+                </footer>
+            )}
             <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }`}</style>
         </div>
     );
