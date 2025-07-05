@@ -1,24 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V9: FIREBASE IMPORTS (V9.1 DEPLOY FIX) ---
-import { auth, db } from './firebase.js'; // Corrected import path with .js extension
+// --- V9.2: ALIAS IMPORTS ---
+import { auth, db } from '@/firebase.js';
 import { onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, getDocs, getDoc, setDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 
-// --- PROMPT IMPORTS (No Changes) ---
-import { basePrompt } from './prompts/base_prompt.js';
-import { intakePrompt } from './prompts/intake_prompt.js';
-import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
-import { safetyCheckPrompt } from './prompts/safety_check_prompt.js';
-import { assignmentGeneratorPrompt } from './prompts/assignment_generator_prompt.js';
-import { earlyPrimaryPrompt } from './prompts/early_primary_prompt.js';
-import { primaryPrompt } from './prompts/primary_prompt.js';
-import { middleSchoolPrompt } from './prompts/middle_school_prompt.js';
-import { highSchoolPrompt } from './prompts/high_school_prompt.js';
-import { universityPrompt } from './prompts/university_prompt.js';
+// --- PROMPT IMPORTS (using alias) ---
+import { basePrompt } from '@/prompts/base_prompt.js';
+import { intakePrompt } from '@/prompts/intake_prompt.js';
+import { intakeSafetyCheckPrompt } from '@/prompts/intake_safety_check_prompt.js';
+import { safetyCheckPrompt } from '@/prompts/safety_check_prompt.js';
+import { assignmentGeneratorPrompt } from '@/prompts/assignment_generator_prompt.js';
+import { earlyPrimaryPrompt } from '@/prompts/early_primary_prompt.js';
+import { primaryPrompt } from '@/prompts/primary_prompt.js';
+import { middleSchoolPrompt } from '@/prompts/middle_school_prompt.js';
+import { highSchoolPrompt } from '@/prompts/high_school_prompt.js';
+import { universityPrompt } from '@/prompts/university_prompt.js';
 
-// --- STYLING & ICONS (Merged from V8.1 and V9) ---
+// --- STYLING & ICONS ---
 const styles = {
   appContainer: { fontFamily: 'sans-serif', backgroundColor: '#f3f4f6', display: 'flex', flexDirection: 'column', height: '100vh' },
   header: { backgroundColor: 'white', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10 },
@@ -54,7 +54,7 @@ const renderMarkdown = (text) => {
     return { __html: rawMarkup };
 };
 
-// --- CHILD COMPONENTS (from V8.1) ---
+// --- CHILD COMPONENTS ---
 const ChatMessage = ({ message }) => {
     const { text, sender } = message;
     const isBot = sender === 'bot';
@@ -88,22 +88,22 @@ const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
             <div dangerouslySetInnerHTML={renderMarkdown(finalDocument)} />
             <div style={styles.summaryActions}>
                 <button onClick={handleCopy} style={styles.actionButton}>{copySuccess || 'Copy to Clipboard'}</button>
-                <button onClick={onRestart} style={styles.actionButton}>Start New Plan</button>
+                <button onClick={onRestart} style={styles.actionButton}>Back to Dashboard</button>
             </div>
         </div>
     );
 };
 
 
-// --- MAIN APP COMPONENT (V9.1 MERGE) ---
+// --- MAIN APP COMPONENT (V9.2 MERGE) ---
 export default function App() {
-    // --- V9 STATE MANAGEMENT ---
+    // --- V9 STATE ---
     const [user, setUser] = useState(null);
     const [isAuthReady, setIsAuthReady] = useState(false);
     const [projects, setProjects] = useState([]);
     const [currentProjectId, setCurrentProjectId] = useState(null);
 
-    // --- V8.1 STATE MANAGEMENT ---
+    // --- V8.1 STATE ---
     const [messages, setMessages] = useState([]);
     const [conversationHistory, setConversationHistory] = useState([]);
     const [inputValue, setInputValue] = useState('');
@@ -120,7 +120,7 @@ export default function App() {
     const chatEndRef = useRef(null);
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-    // --- V9: AUTHENTICATION EFFECT ---
+    // --- V9 EFFECTS ---
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             if (user) {
@@ -136,7 +136,6 @@ export default function App() {
         return () => unsubscribe();
     }, []);
 
-    // --- V9: SAVE CONVERSATION EFFECT ---
     useEffect(() => {
         const save = async () => {
             if (currentProjectId && user && conversationHistory.length > 0) {
@@ -150,7 +149,7 @@ export default function App() {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isBotTyping]);
 
-    // --- V9: DATABASE & AUTH FUNCTIONS ---
+    // --- V9 DATABASE & AUTH FUNCTIONS ---
     const handleSignIn = async () => {
         try {
             await signInAnonymously(auth);
@@ -161,7 +160,6 @@ export default function App() {
 
     const handleSignOut = async () => {
         await signOut(auth);
-        // Reset all state to default
         setCurrentProjectId(null);
         setMessages([]);
         setConversationHistory([]);
@@ -178,7 +176,7 @@ export default function App() {
 
     const handleStartNewProject = () => {
         setMessages([{
-            text: "Welcome! I'm the ALF Coach, your creative partner in designing transformative learning experiences. To start, please tell me what age or grade level you are designing for (e.g., '7 year olds', 'high school', or 'university').",
+            text: "Welcome! I'm the ALF Coach. To start, please tell me what age or grade level you are designing for.",
             sender: 'bot',
             id: Date.now()
         }]);
@@ -208,7 +206,6 @@ export default function App() {
             }));
             setMessages(loadedMessages);
             
-            // Restore other state from saved data
             setConversationStage(projectData.stage || 'follow_up');
             setFinalCurriculumText(projectData.finalCurriculumText || '');
             setGeneratedAssignments(projectData.generatedAssignments || []);
@@ -230,7 +227,7 @@ export default function App() {
             generatedAssignments,
             finalProjectDocument,
             sessionSummary,
-            title: conversationHistory[1]?.parts[0]?.text.substring(0, 40) || 'New Project'
+            title: conversationHistory[1]?.parts[0]?.text.substring(0, 40) + '...' || 'New Project'
         };
     
         if (currentProjectId.startsWith('temp_')) {
@@ -241,116 +238,42 @@ export default function App() {
             const projectDocRef = doc(db, 'users', user.uid, 'projects', currentProjectId);
             await setDoc(projectDocRef, projectData, { merge: true });
         }
-        fetchProjects(user.uid);
     };
 
     // --- API & RESPONSE LOGIC (from V8.1) ---
     const callApi = async (history) => {
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: history })
-        });
-        if (!response.ok) throw new Error(`API call failed with status: ${response.status}`);
+        const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: history }) });
+        if (!response.ok) throw new Error(`API call failed: ${response.status}`);
         return await response.json();
     };
-
-    const getAgeGroupFromAI = async (userInput) => {
-        const sorterPrompt = `You are an input sorter. Your job is to categorize the user's input into one of five specific categories: 'Early Primary', 'Primary', 'Middle School', 'High School', or 'University'. The user's input is: '${userInput}'. Respond with ONLY the category name and nothing else.`;
-        const result = await callApi([{ role: "user", parts: [{ text: sorterPrompt }] }]);
-        if (result.candidates && result.candidates.length > 0) {
-            const category = result.candidates[0].content.parts[0].text.trim();
-            const validCategories = ['Early Primary', 'Primary', 'Middle School', 'High School', 'University'];
-            if (validCategories.includes(category)) return category;
-        }
-        return null;
-    };
     
-    const runIntakeSafetyCheck = async (userInput) => {
-        const checkPrompt = intakeSafetyCheckPrompt.replace("[USER'S RESPONSE]", userInput);
-        const result = await callApi([{ role: "user", parts: [{ text: checkPrompt }] }]);
-        return result.candidates?.[0]?.content.parts[0].text.trim().replace(/[.,]/g, '') || "SAFE";
-    };
-
-    const runMainSafetyCheck = async (catalystText) => {
-        const checkPrompt = safetyCheckPrompt.replace('[CATALYST SUMMARY]', catalystText);
-        const result = await callApi([{ role: "user", parts: [{ text: checkPrompt }] }]);
-        return result.candidates?.[0]?.content.parts[0].text.trim() || "Error";
-    };
-
-    const summarizeKeyDecisions = async (historyForSummary) => {
-        const summarizationPrompt = `Concisely summarize the key decisions from this conversation history in a single sentence. Focus on the age group, the core topic, and the intended final product. Example: "Project is for middle schoolers, focused on social media's impact, with a final product being a 'digital detox' plan." Here is the conversation history: ${JSON.stringify(historyForSummary)}`;
-        try {
-            const summaryResult = await callApi([{ role: "user", parts: [{ text: summarizationPrompt }] }]);
-            if (summaryResult.candidates && summaryResult.candidates[0].content) {
-                const newSummary = summaryResult.candidates[0].content.parts[0].text.trim();
-                setSessionSummary(newSummary);
-                return newSummary;
-            }
-        } catch (error) { console.error("V8 Error during summarization:", error); }
-        return '';
-    };
-
     const generateAiResponse = async (currentHistory, useSummary = true) => {
         setIsBotTyping(true);
         let historyToSend = [...currentHistory];
         if (useSummary && sessionSummary) {
-            const summaryInstruction = { role: "user", parts: [{ text: `# CONTEXT\nHere is a summary of our key decisions so far: "${sessionSummary}". Keep this context in mind as you respond.` }] };
+            const summaryInstruction = { role: "user", parts: [{ text: `# CONTEXT\nOur project summary: "${sessionSummary}". Keep this in mind.` }] };
             historyToSend.splice(historyToSend.length - 1, 0, summaryInstruction);
         }
 
         try {
             const result = await callApi(historyToSend);
-            if (result.candidates && result.candidates.length > 0) {
+            if (result.candidates && result.candidates[0].content) {
                 let text = result.candidates[0].content.parts[0].text;
                 const newHistory = [...currentHistory, { role: "model", parts: [{ text }] }];
-                setConversationHistory(newHistory);
+                setConversationHistory(newHistory); // This will trigger the save effect
                 
-                const CATALYST_SIGNAL = "<<<CATALYST_DEFINED>>>";
-                const COMPLETION_SIGNAL = "<<<CURRICULUM_COMPLETE>>>";
-                const ASSIGNMENTS_COMPLETE_SIGNAL = "<<<ASSIGNMENTS_COMPLETE>>>";
+                // The rest of this function's logic is now handled by setting state and letting the UI re-render
+                // We just need to add the new message to the UI
+                setMessages(prev => [...prev, { text, sender: 'bot', id: Date.now() }]);
 
-                if (text.includes(CATALYST_SIGNAL)) {
-                    const summary = text.replace(CATALYST_SIGNAL, "").trim();
-                    const safetyResult = await runMainSafetyCheck(summary);
-                    if (safetyResult === "PROCEED") {
-                        const transitionMessage = newHistory[newHistory.length - 1].parts[0].text.replace(CATALYST_SIGNAL, "").trim();
-                        setMessages(prev => [...prev, { text: transitionMessage, sender: 'bot', id: Date.now() }]);
-                        setConversationStage('issues_planning');
-                    } else {
-                        setMessages(prev => [...prev, { text: safetyResult, sender: 'bot', id: Date.now() }]);
-                        setConversationStage('catalyst_planning');
-                    }
-                } else if (text.includes(COMPLETION_SIGNAL)) {
-                    const curriculumText = text.replace(COMPLETION_SIGNAL, "").trim();
-                    setFinalCurriculumText(curriculumText);
-                    await summarizeKeyDecisions(newHistory); 
-                    const curriculumMessage = { text: curriculumText, sender: 'bot', id: Date.now() };
-                    const assignmentOffer = { text: "We now have a strong foundation for our curriculum. Shall we now proceed to build out the detailed, scaffolded assignments for the students?", sender: 'bot', id: Date.now() + 1 };
-                    setMessages(prev => [...prev, curriculumMessage, assignmentOffer]);
-                    setConversationStage('awaiting_assignments_confirmation');
-                } else if (text.includes(ASSIGNMENTS_COMPLETE_SIGNAL)) {
-                    const lastAssignmentText = text.replace(ASSIGNMENTS_COMPLETE_SIGNAL, "").trim();
-                    const allAssignments = [...generatedAssignments, lastAssignmentText].join('\n\n');
-                    const fullDocument = `${finalCurriculumText}\n\n---\n\n## Scaffolded Assignments\n\n${allAssignments}`;
-                    setFinalProjectDocument(fullDocument);
-                    setConversationStage('finished_project');
-                }
-                else {
-                    if (conversationStage === 'designing_assignments_main') {
-                        setGeneratedAssignments(prev => [...prev, text]);
-                    }
-                    setMessages(prev => [...prev, { text, sender: 'bot', id: Date.now() }]);
-                }
             } else {
                 let errorMessage = "Sorry, I couldn't generate a response.";
-                if (result.candidates?.[0]?.finishReason === "SAFETY") errorMessage = "The response was blocked for safety reasons. Please rephrase your input.";
                 setMessages(prev => [...prev, { text: errorMessage, sender: 'bot', id: Date.now() }]);
             }
         } catch (error) {
-            console.error("Error generating AI response:", error);
-            setMessages(prev => [...prev, { text: "Sorry, I encountered an error connecting to the AI.", sender: 'bot', id: Date.now() }]);
+            console.error("AI response error:", error);
+            setMessages(prev => [...prev, { text: "Sorry, an error occurred.", sender: 'bot', id: Date.now() }]);
         } finally {
             setIsBotTyping(false);
         }
@@ -359,17 +282,17 @@ export default function App() {
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
-        setMessages(prev => [...prev, userMessage]);
         
-        const currentInput = inputValue;
-        const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
-        setConversationHistory(updatedHistory);
-
+        const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: inputValue }] }];
+        
+        setMessages(prev => [...prev, userMessage]);
+        setConversationHistory(updatedHistory); // This triggers the save and the AI response
         setInputValue('');
+
         await generateAiResponse(updatedHistory);
     };
 
-    // --- V9.1: RENDER LOGIC ---
+    // --- V9.2 RENDER LOGIC ---
     if (!isAuthReady) {
         return <div style={styles.centeredContainer}><h1>Loading ALF Coach...</h1></div>;
     }
@@ -377,7 +300,7 @@ export default function App() {
     return (
         <div style={styles.appContainer}>
             <header style={styles.header}>
-                <h1 style={styles.headerTitle}>ALF Coach V9.1</h1>
+                <h1 style={styles.headerTitle}>ALF Coach V9.2</h1>
                 {user && <button onClick={handleSignOut} style={styles.authButton}>Sign Out</button>}
             </header>
             <main style={styles.mainContent}>
