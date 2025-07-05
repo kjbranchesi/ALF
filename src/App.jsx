@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V8 PROMPT IMPORTS ---
+// --- V7.3 PROMPT IMPORTS ---
 import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
 import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
@@ -56,7 +56,7 @@ const ChatMessage = ({ message }) => {
 };
 
 
-// --- MAIN APP COMPONENT (V8 REWRITE) ---
+// --- MAIN APP COMPONENT (V7.3 REWRITE) ---
 export default function App() {
     // --- STATE MANAGEMENT ---
     const [messages, setMessages] = useState([]);
@@ -64,7 +64,7 @@ export default function App() {
     const [inputValue, setInputValue] = useState('');
     const [isBotTyping, setIsBotTyping] = useState(false);
     const [conversationStage, setConversationStage] = useState('welcome');
-    const [ageGroup, setAgeGroup] = useState(''); // V8: Store the age group string
+    const [ageGroup, setAgeGroup] = useState('');
     const [ageGroupPrompt, setAgeGroupPrompt] = useState('');
     const [intakeAnswers, setIntakeAnswers] = useState({});
     const [finalCurriculumText, setFinalCurriculumText] = useState('');
@@ -169,7 +169,7 @@ export default function App() {
         }
     };
     
-    // --- `handleSendMessage` LOGIC HUB (V8 REWRITE) ---
+    // --- `handleSendMessage` LOGIC HUB (V7.3 REWRITE) ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
@@ -187,7 +187,7 @@ export default function App() {
                 case 'select_age': {
                     const category = await getAgeGroupFromAI(currentInput);
                     if (category) {
-                        setAgeGroup(category); // V8: Store the age group string
+                        setAgeGroup(category);
                         let selectedPrompt = '';
                         if (category === 'Early Primary') selectedPrompt = earlyPrimaryPrompt;
                         else if (category === 'Primary') selectedPrompt = primaryPrompt;
@@ -229,6 +229,7 @@ export default function App() {
                     }
                     
                     const systemPrompt = `${systemInstruction}\nThe user has responded to Question 2. Their idea is: '${currentInput}'. Follow your protocol and ask Question 3.`;
+                    // V7.3 HOTFIX: Pass only the specific prompt, not the whole history, to prevent the AI from seeing its own safety check response.
                     await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
                     setConversationStage('awaiting_intake_3');
                     break;
@@ -247,10 +248,10 @@ export default function App() {
                     setConversationStage('catalyst_planning');
                     break;
                 }
-                // V8: New collaborative assignment workflow stages
                 case 'awaiting_assignments_confirmation': {
                     if (currentInput.toLowerCase().includes('yes')) {
                         setConversationStage('designing_assignments_intro');
+                        // V7.3 HOTFIX: Pass the age group explicitly to the prompt context.
                         const systemPrompt = `${assignmentGeneratorPrompt}\n\nHere is the curriculum we designed:\n\n${finalCurriculumText}\n\nNow, begin the assignment design workflow. Start with Step 1: Propose the Scaffolding Strategy for the ${ageGroup} age group.`;
                         await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
                     } else {

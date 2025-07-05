@@ -1,6 +1,5 @@
-// V8 OVERHAUL: This prompt has been completely rewritten to support a new, collaborative,
-// one-assignment-at-a-time workflow. It is now an expert in guiding the teacher
-// through a specific, research-backed scaffolding arc.
+// V7.3 HOTFIX: Escaped the backticks (`) within the prompt's template literal to fix the
+// JavaScript syntax error that was causing the build to fail. The logic remains the same.
 
 export const assignmentGeneratorPrompt = `
 # AI TASK: COLLABORATIVE PBL ASSIGNMENT DESIGNER
@@ -35,12 +34,12 @@ You will be provided with the final curriculum plan and the target age group. Yo
 
 1.  **Synthesize the teacher's input** with the detailed research for that specific assignment.
 2.  **Generate the complete, student-facing assignment.** It MUST be formatted with Markdown and include all five required sections:
-    * `### Assignment [Number]: [Clear, Student-Facing Title]`
-    * `**Objective:**`
-    * `**Your Task:**`
-    * `**Key Questions to Consider:**`
-    * `**Deliverable:**`
-    * `**Feedback & Iteration Loop:**`
+    * \`### Assignment [Number]: [Clear, Student-Facing Title]\`
+    * \`**Objective:**\`
+    * \`**Your Task:**\`
+    * \`**Key Questions to Consider:**\`
+    * \`**Deliverable:**\`
+    * \`**Feedback & Iteration Loop:**\`
 3.  **Check for Understanding.** End your response by asking for feedback on the assignment you just created. (e.g., "How does this look for our first assignment?")
 
 ### **Step 4: Repeat for Subsequent Assignments**
@@ -53,7 +52,7 @@ You will be provided with the final curriculum plan and the target age group. Yo
 
 ### **Step 5: Recommend Assessment Methods**
 
-1.  **After the FINAL assignment is created,** add a concluding section titled `## Recommended Assessment Methods`.
+1.  **After the FINAL assignment is created,** add a concluding section titled \`## Recommended Assessment Methods\`.
 2.  In this section, list and briefly describe the most appropriate assessment methods for the project as a whole, drawing directly from the research.
 
 ---
