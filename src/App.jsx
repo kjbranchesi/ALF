@@ -1,22 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V9.2: ALIAS IMPORTS ---
-import { auth, db } from '@/firebase.js';
+// --- V9.3: Using direct relative paths for robust deployment ---
+import { auth, db } from './firebase.js';
 import { onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, getDocs, getDoc, setDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 
-// --- PROMPT IMPORTS (using alias) ---
-import { basePrompt } from '@/prompts/base_prompt.js';
-import { intakePrompt } from '@/prompts/intake_prompt.js';
-import { intakeSafetyCheckPrompt } from '@/prompts/intake_safety_check_prompt.js';
-import { safetyCheckPrompt } from '@/prompts/safety_check_prompt.js';
-import { assignmentGeneratorPrompt } from '@/prompts/assignment_generator_prompt.js';
-import { earlyPrimaryPrompt } from '@/prompts/early_primary_prompt.js';
-import { primaryPrompt } from '@/prompts/primary_prompt.js';
-import { middleSchoolPrompt } from '@/prompts/middle_school_prompt.js';
-import { highSchoolPrompt } from '@/prompts/high_school_prompt.js';
-import { universityPrompt } from '@/prompts/university_prompt.js';
+// --- PROMPT IMPORTS (using direct paths) ---
+import { basePrompt } from './prompts/base_prompt.js';
+import { intakePrompt } from './prompts/intake_prompt.js';
+import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
+import { safetyCheckPrompt } from './prompts/safety_check_prompt.js';
+import { assignmentGeneratorPrompt } from './prompts/assignment_generator_prompt.js';
+import { earlyPrimaryPrompt } from './prompts/early_primary_prompt.js';
+import { primaryPrompt } from './prompts/primary_prompt.js';
+import { middleSchoolPrompt } from './prompts/middle_school_prompt.js';
+import { highSchoolPrompt } from './prompts/high_school_prompt.js';
+import { universityPrompt } from './prompts/university_prompt.js';
 
 // --- STYLING & ICONS ---
 const styles = {
@@ -95,7 +95,7 @@ const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
 };
 
 
-// --- MAIN APP COMPONENT (V9.2 MERGE) ---
+// --- MAIN APP COMPONENT (V9.3 MERGE) ---
 export default function App() {
     // --- V9 STATE ---
     const [user, setUser] = useState(null);
@@ -240,7 +240,7 @@ export default function App() {
         }
     };
 
-    // --- API & RESPONSE LOGIC (from V8.1) ---
+    // --- API & RESPONSE LOGIC ---
     const callApi = async (history) => {
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: history }) });
@@ -261,10 +261,7 @@ export default function App() {
             if (result.candidates && result.candidates[0].content) {
                 let text = result.candidates[0].content.parts[0].text;
                 const newHistory = [...currentHistory, { role: "model", parts: [{ text }] }];
-                setConversationHistory(newHistory); // This will trigger the save effect
-                
-                // The rest of this function's logic is now handled by setting state and letting the UI re-render
-                // We just need to add the new message to the UI
+                setConversationHistory(newHistory);
                 setMessages(prev => [...prev, { text, sender: 'bot', id: Date.now() }]);
 
             } else {
@@ -286,13 +283,13 @@ export default function App() {
         const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: inputValue }] }];
         
         setMessages(prev => [...prev, userMessage]);
-        setConversationHistory(updatedHistory); // This triggers the save and the AI response
+        setConversationHistory(updatedHistory);
         setInputValue('');
 
         await generateAiResponse(updatedHistory);
     };
 
-    // --- V9.2 RENDER LOGIC ---
+    // --- RENDER LOGIC ---
     if (!isAuthReady) {
         return <div style={styles.centeredContainer}><h1>Loading ALF Coach...</h1></div>;
     }
@@ -300,7 +297,7 @@ export default function App() {
     return (
         <div style={styles.appContainer}>
             <header style={styles.header}>
-                <h1 style={styles.headerTitle}>ALF Coach V9.2</h1>
+                <h1 style={styles.headerTitle}>ALF Coach V9.3</h1>
                 {user && <button onClick={handleSignOut} style={styles.authButton}>Sign Out</button>}
             </header>
             <main style={styles.mainContent}>
