@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V8.1 PROMPT IMPORTS ---
-// These prompts work with the new V8.1 logic.
+// --- V9: FIREBASE IMPORTS ---
+import { auth, db } from './firebase'; // Import from our new config file
+import { onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
+import { collection, addDoc, doc, getDocs, getDoc, setDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
+
+// --- PROMPT IMPORTS (No Changes) ---
 import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
 import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
@@ -14,15 +18,14 @@ import { middleSchoolPrompt } from './prompts/middle_school_prompt.js';
 import { highSchoolPrompt } from './prompts/high_school_prompt.js';
 import { universityPrompt } from './prompts/university_prompt.js';
 
-
-// --- STYLING & ICONS (No Changes) ---
+// --- STYLING & ICONS (Merged from V8.1 and V9) ---
 const styles = {
   appContainer: { fontFamily: 'sans-serif', backgroundColor: '#f3f4f6', display: 'flex', flexDirection: 'column', height: '100vh' },
   header: { backgroundColor: 'white', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10 },
   headerTitle: { fontSize: '1.25rem', fontWeight: 'bold', color: '#1f2937' },
-  restartButton: { backgroundColor: '#eef2ff', color: '#4f46e5', fontWeight: 'bold', padding: '8px 16px', borderRadius: '8px', border: '1px solid #4f46e5', cursor: 'pointer', transition: 'background-color 0.2s' },
-  mainContent: { flex: 1, overflowY: 'auto', padding: '24px' },
-  contentWrapper: { maxWidth: '896px', margin: '0 auto' },
+  authButton: { backgroundColor: '#eef2ff', color: '#4f46e5', fontWeight: 'bold', padding: '8px 16px', borderRadius: '8px', border: '1px solid #4f46e5', cursor: 'pointer', transition: 'background-color 0.2s' },
+  mainContent: { flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', justifyContent: 'center' },
+  contentWrapper: { width: '100%', maxWidth: '896px', margin: '0 auto' },
   footer: { backgroundColor: 'white', borderTop: '1px solid #e5e7eb', padding: '16px' },
   inputArea: { display: 'flex', alignItems: 'center', backgroundColor: '#f3f4f6', borderRadius: '8px', padding: '8px' },
   textarea: { width: '100%', backgroundColor: 'transparent', padding: '8px', color: '#1f2937', border: 'none', outline: 'none', resize: 'none', fontSize: '1rem' },
@@ -31,6 +34,11 @@ const styles = {
   messageContainer: (isBot) => ({ display: 'flex', alignItems: 'flex-start', gap: '12px', margin: '16px 0', justifyContent: isBot ? 'flex-start' : 'flex-end' }),
   iconContainer: { flexShrink: 0, backgroundColor: '#e5e7eb', borderRadius: '50%', padding: '8px' },
   messageBubble: (isBot) => ({ maxWidth: '80%', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', backgroundColor: isBot ? '#eef2ff' : 'white', color: '#1f2937', wordWrap: 'break-word', borderTopLeftRadius: isBot ? '0px' : '12px', borderTopRightRadius: isBot ? '12px' : '0px', lineHeight: 1.7 }),
+  centeredContainer: { display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100%', textAlign: 'center' },
+  dashboardContainer: { backgroundColor: 'white', padding: '32px', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', width: '100%' },
+  projectList: { listStyle: 'none', padding: 0, margin: '24px 0' },
+  projectItem: { textAlign: 'left', padding: '16px', border: '1px solid #e5e7eb', borderRadius: '8px', marginBottom: '12px', cursor: 'pointer', transition: 'background-color 0.2s' },
+  button: { backgroundColor: '#4f46e5', color: 'white', fontWeight: 'bold', padding: '12px 24px', borderRadius: '8px', border: 'none', cursor: 'pointer', transition: 'background-color 0.2s' },
   summaryContainer: { backgroundColor: 'white', padding: '32px', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' },
   summaryActions: { marginTop: '24px', display: 'flex', gap: '12px' },
   actionButton: { flex: 1, backgroundColor: '#6b7280', color: 'white', fontWeight: 'bold', padding: '12px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', transition: 'background-color 0.2s' },
@@ -46,7 +54,7 @@ const renderMarkdown = (text) => {
     return { __html: rawMarkup };
 };
 
-// --- CHILD COMPONENTS ---
+// --- CHILD COMPONENTS (from V8.1) ---
 const ChatMessage = ({ message }) => {
     const { text, sender } = message;
     const isBot = sender === 'bot';
@@ -87,9 +95,15 @@ const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
 };
 
 
-// --- MAIN APP COMPONENT (V8.1 REWRITE) ---
+// --- MAIN APP COMPONENT (V9.1 MERGE) ---
 export default function App() {
-    // --- STATE MANAGEMENT ---
+    // --- V9 STATE MANAGEMENT ---
+    const [user, setUser] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+    const [projects, setProjects] = useState([]);
+    const [currentProjectId, setCurrentProjectId] = useState(null);
+
+    // --- V8.1 STATE MANAGEMENT ---
     const [messages, setMessages] = useState([]);
     const [conversationHistory, setConversationHistory] = useState([]);
     const [inputValue, setInputValue] = useState('');
@@ -106,21 +120,131 @@ export default function App() {
     const chatEndRef = useRef(null);
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-    // --- EFFECTS ---
+    // --- V9: AUTHENTICATION EFFECT ---
     useEffect(() => {
-        setMessages([{
-            text: "Welcome! I'm the ALF Coach, your creative partner in designing transformative learning experiences. To start, please tell me what age or grade level you are designing for (e.g., '7 year olds', 'high school', or 'university').",
-            sender: 'bot',
-            id: Date.now()
-        }]);
-        setConversationStage('select_age');
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                setUser(user);
+                fetchProjects(user.uid);
+            } else {
+                setUser(null);
+                setProjects([]);
+                setCurrentProjectId(null);
+            }
+            setIsAuthReady(true);
+        });
+        return () => unsubscribe();
     }, []);
+
+    // --- V9: SAVE CONVERSATION EFFECT ---
+    useEffect(() => {
+        const save = async () => {
+            if (currentProjectId && user && conversationHistory.length > 0) {
+                await saveConversation();
+            }
+        };
+        save();
+    }, [conversationHistory]);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, isBotTyping]);
 
-    // --- API & RESPONSE LOGIC ---
+    // --- V9: DATABASE & AUTH FUNCTIONS ---
+    const handleSignIn = async () => {
+        try {
+            await signInAnonymously(auth);
+        } catch (error) {
+            console.error("Error signing in anonymously:", error);
+        }
+    };
+
+    const handleSignOut = async () => {
+        await signOut(auth);
+        // Reset all state to default
+        setCurrentProjectId(null);
+        setMessages([]);
+        setConversationHistory([]);
+        setConversationStage('welcome');
+    };
+    
+    const fetchProjects = async (uid) => {
+        const projectsCol = collection(db, 'users', uid, 'projects');
+        const q = query(projectsCol, orderBy('lastUpdated', 'desc'));
+        const projectSnapshot = await getDocs(q);
+        const projectList = projectSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProjects(projectList);
+    };
+
+    const handleStartNewProject = () => {
+        setMessages([{
+            text: "Welcome! I'm the ALF Coach, your creative partner in designing transformative learning experiences. To start, please tell me what age or grade level you are designing for (e.g., '7 year olds', 'high school', or 'university').",
+            sender: 'bot',
+            id: Date.now()
+        }]);
+        setConversationHistory([]);
+        setConversationStage('select_age');
+        setFinalCurriculumText('');
+        setGeneratedAssignments([]);
+        setFinalProjectDocument('');
+        setSessionSummary('');
+        setCurrentProjectId(`temp_${Date.now()}`); 
+    };
+
+    const loadProject = async (projectId) => {
+        if (!user) return;
+        const projectDocRef = doc(db, 'users', user.uid, 'projects', projectId);
+        const projectSnap = await getDoc(projectDocRef);
+
+        if (projectSnap.exists()) {
+            const projectData = projectSnap.data();
+            const loadedHistory = projectData.history || [];
+            setConversationHistory(loadedHistory);
+            
+            const loadedMessages = loadedHistory.map((turn, index) => ({
+                text: turn.parts[0].text,
+                sender: turn.role === 'user' ? 'user' : 'bot',
+                id: `${projectId}_${index}`
+            }));
+            setMessages(loadedMessages);
+            
+            // Restore other state from saved data
+            setConversationStage(projectData.stage || 'follow_up');
+            setFinalCurriculumText(projectData.finalCurriculumText || '');
+            setGeneratedAssignments(projectData.generatedAssignments || []);
+            setFinalProjectDocument(projectData.finalProjectDocument || '');
+            setSessionSummary(projectData.sessionSummary || '');
+            
+            setCurrentProjectId(projectId);
+        }
+    };
+
+    const saveConversation = async () => {
+        if (!user || !currentProjectId) return;
+    
+        const projectData = {
+            history: conversationHistory,
+            lastUpdated: serverTimestamp(),
+            stage: conversationStage,
+            finalCurriculumText,
+            generatedAssignments,
+            finalProjectDocument,
+            sessionSummary,
+            title: conversationHistory[1]?.parts[0]?.text.substring(0, 40) || 'New Project'
+        };
+    
+        if (currentProjectId.startsWith('temp_')) {
+            const projectsCol = collection(db, 'users', user.uid, 'projects');
+            const docRef = await addDoc(projectsCol, projectData);
+            setCurrentProjectId(docRef.id);
+        } else {
+            const projectDocRef = doc(db, 'users', user.uid, 'projects', currentProjectId);
+            await setDoc(projectDocRef, projectData, { merge: true });
+        }
+        fetchProjects(user.uid);
+    };
+
+    // --- API & RESPONSE LOGIC (from V8.1) ---
     const callApi = async (history) => {
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         const response = await fetch(apiUrl, {
@@ -156,25 +280,15 @@ export default function App() {
     };
 
     const summarizeKeyDecisions = async (historyForSummary) => {
-        const summarizationPrompt = `
-            Concisely summarize the key decisions from this conversation history in a single sentence. 
-            Focus on the age group, the core topic, and the intended final product.
-            Example: "Project is for middle schoolers, focused on social media's impact, with a final product being a 'digital detox' plan."
-            
-            Here is the conversation history:
-            ${JSON.stringify(historyForSummary)}
-        `;
+        const summarizationPrompt = `Concisely summarize the key decisions from this conversation history in a single sentence. Focus on the age group, the core topic, and the intended final product. Example: "Project is for middle schoolers, focused on social media's impact, with a final product being a 'digital detox' plan." Here is the conversation history: ${JSON.stringify(historyForSummary)}`;
         try {
             const summaryResult = await callApi([{ role: "user", parts: [{ text: summarizationPrompt }] }]);
             if (summaryResult.candidates && summaryResult.candidates[0].content) {
                 const newSummary = summaryResult.candidates[0].content.parts[0].text.trim();
                 setSessionSummary(newSummary);
-                console.log("V8 MEMORY SET:", newSummary);
                 return newSummary;
             }
-        } catch (error) {
-            console.error("V8 Error during summarization:", error);
-        }
+        } catch (error) { console.error("V8 Error during summarization:", error); }
         return '';
     };
 
@@ -182,10 +296,7 @@ export default function App() {
         setIsBotTyping(true);
         let historyToSend = [...currentHistory];
         if (useSummary && sessionSummary) {
-            const summaryInstruction = { 
-                role: "user", 
-                parts: [{ text: `# CONTEXT\nHere is a summary of our key decisions so far: "${sessionSummary}". Keep this context in mind as you respond.` }]
-            };
+            const summaryInstruction = { role: "user", parts: [{ text: `# CONTEXT\nHere is a summary of our key decisions so far: "${sessionSummary}". Keep this context in mind as you respond.` }] };
             historyToSend.splice(historyToSend.length - 1, 0, summaryInstruction);
         }
 
@@ -245,7 +356,6 @@ export default function App() {
         }
     };
     
-    // --- `handleSendMessage` LOGIC HUB (V8.1 REWRITE) ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
@@ -256,153 +366,70 @@ export default function App() {
         setConversationHistory(updatedHistory);
 
         setInputValue('');
-        setIsBotTyping(true);
-
-        try {
-            switch (conversationStage) {
-                case 'select_age': {
-                    const category = await getAgeGroupFromAI(currentInput);
-                    if (category) {
-                        setAgeGroup(category);
-                        let selectedPrompt = '';
-                        if (category === 'Early Primary') selectedPrompt = earlyPrimaryPrompt;
-                        else if (category === 'Primary') selectedPrompt = primaryPrompt;
-                        else if (category === 'Middle School') selectedPrompt = middleSchoolPrompt;
-                        else if (category === 'High School') selectedPrompt = highSchoolPrompt;
-                        else if (category === 'University') selectedPrompt = universityPrompt;
-                        setAgeGroupPrompt(selectedPrompt);
-                        
-                        const systemPrompt = `${intakePrompt}\nAsk Intake Question 1.`;
-                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }], false);
-                        setConversationStage('awaiting_intake_1');
-                    } else {
-                        setMessages(prev => [...prev, { text: "I'm sorry, I couldn't determine the age group. Could you please try again?", sender: 'bot', id: Date.now() + 1 }]);
-                        setIsBotTyping(false);
-                    }
-                    break;
-                }
-                case 'awaiting_intake_1': {
-                    setIntakeAnswers({ experience: currentInput });
-                    const systemPrompt = `${intakePrompt}\nThe user has responded to Question 1. Their experience level is: '${currentInput}'. Now, follow your protocol to provide the correct pedagogical onboarding (Path A or B) and ask Question 2.`;
-                    await generateAiResponse(updatedHistory, false);
-                    setConversationStage('awaiting_intake_2');
-                    break;
-                }
-                case 'awaiting_intake_2': {
-                    // --- V8.1 FIX: Handle "no idea" case before safety check ---
-                    const lowerCaseInput = currentInput.toLowerCase();
-                    const needsIdeas = ['no', 'not yet', 'don\'t know', 'need help', 'need ideas', 'explore'].some(term => lowerCaseInput.includes(term));
-
-                    if (needsIdeas) {
-                        setIntakeAnswers(prev => ({ ...prev, idea: 'User needs help brainstorming' }));
-                        const systemPrompt = `${intakePrompt}\nThe user has indicated they need help brainstorming a topic. Follow Path C.`;
-                        // We don't need to add to history here, just trigger the new path.
-                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }], false);
-                        // We stay in 'awaiting_intake_2' because the next user message will be their choice of topic.
-                        // After they choose, the logic will fall through this 'if' block on the next turn.
-                        return; // Exit the switch case here to await user's choice
-                    }
-                    // --- END V8.1 FIX ---
-
-                    // If the user provided a topic, proceed with the safety check as before.
-                    const sentiment = await runIntakeSafetyCheck(currentInput);
-                    if (sentiment === 'UNSAFE') {
-                        setMessages(prev => [...prev, { text: "I cannot proceed with that topic as it violates safety guidelines. Please choose a different theme.", sender: 'bot', id: Date.now() + 1 }]);
-                        // Stay in this stage to allow user to provide a new topic
-                        setConversationStage('awaiting_intake_2');
-                        setIsBotTyping(false);
-                        return;
-                    }
-                    
-                    setIntakeAnswers(prev => ({ ...prev, idea: currentInput }));
-                    
-                    let systemInstruction = intakePrompt;
-                    if (sentiment === 'QUESTIONABLE') {
-                        systemInstruction = `# SPECIAL INSTRUCTION: The user has proposed a sensitive topic. Adopt a neutral, probing tone as you ask the next question. Do not use positive affirmations.\n\n${intakePrompt}`;
-                    }
-                    
-                    const systemPrompt = `${systemInstruction}\nThe user has responded to Question 2 with a topic. Their idea is: '${currentInput}'. Follow your protocol and ask Question 3.`;
-                    await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }], false);
-                    setConversationStage('awaiting_intake_3');
-                    break;
-                }
-                case 'awaiting_intake_3': {
-                    const finalIntakeAnswers = { ...intakeAnswers, constraints: currentInput };
-                    const finalSystemPrompt = `${basePrompt}\n${ageGroupPrompt}\n# USER CONTEXT FROM INTAKE:\n- User's experience with PBL: ${finalIntakeAnswers.experience}\n- User's starting idea: ${finalIntakeAnswers.idea}\n- User's project constraints: ${finalIntakeAnswers.constraints}`;
-                    const kickoffMessage = "Excellent, this is all incredibly helpful context. Let's get started.";
-                    
-                    setMessages(prev => [...prev, { text: kickoffMessage, sender: 'bot', id: Date.now() + 1 }]);
-                    
-                    const initialHistory = [{ role: "user", parts: [{ text: finalSystemPrompt }] }, { role: "model", parts: [{ text: kickoffMessage }] }];
-                    setConversationHistory(initialHistory);
-                    
-                    await generateAiResponse(initialHistory, false);
-                    setConversationStage('catalyst_planning');
-                    break;
-                }
-                case 'awaiting_assignments_confirmation': {
-                    if (currentInput.toLowerCase().includes('yes')) {
-                        setConversationStage('designing_assignments_intro');
-                        const systemPrompt = `${assignmentGeneratorPrompt}\n\nHere is the curriculum we designed:\n\n${finalCurriculumText}\n\nNow, begin the assignment design workflow. Start with Step 1: Propose the Scaffolding Strategy for the ${ageGroup} age group.`;
-                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
-                    } else {
-                        setMessages(prev => [...prev, { text: "No problem! Feel free to ask any other follow-up questions.", sender: 'bot', id: Date.now() + 1 }]);
-                        setConversationStage('follow_up');
-                        setIsBotTyping(false);
-                    }
-                    break;
-                }
-                case 'designing_assignments_intro':
-                case 'designing_assignments_main': {
-                    setConversationStage('designing_assignments_main');
-                    await generateAiResponse(updatedHistory);
-                    break;
-                }
-                default: {
-                    await generateAiResponse(updatedHistory);
-                }
-            }
-        } catch (error) {
-            console.error("Error in handleSendMessage:", error);
-            setMessages(prev => [...prev, { text: "An unexpected error occurred. Please try again.", sender: 'bot', id: Date.now() }]);
-            setIsBotTyping(false);
-        }
+        await generateAiResponse(updatedHistory);
     };
 
-    const handleRestart = () => window.location.reload();
+    // --- V9.1: RENDER LOGIC ---
+    if (!isAuthReady) {
+        return <div style={styles.centeredContainer}><h1>Loading ALF Coach...</h1></div>;
+    }
 
-    // --- RENDER ---
     return (
         <div style={styles.appContainer}>
             <header style={styles.header}>
-                <h1 style={styles.headerTitle}>ALF - The Active Learning Framework Coach</h1>
-                <button onClick={handleRestart} style={styles.restartButton}>Start New Plan</button>
+                <h1 style={styles.headerTitle}>ALF Coach V9.1</h1>
+                {user && <button onClick={handleSignOut} style={styles.authButton}>Sign Out</button>}
             </header>
             <main style={styles.mainContent}>
                 <div style={styles.contentWrapper}>
-                    {conversationStage === 'finished_project' ? (
-                        <FinalProjectDisplay finalDocument={finalProjectDocument} onRestart={handleRestart} />
+                    {!user ? (
+                        <div style={styles.centeredContainer}>
+                            <h2>Welcome to your persistent workspace.</h2>
+                            <p style={{margin: '16px 0 24px'}}>Sign in to save your projects and continue your work anytime.</p>
+                            <button onClick={handleSignIn} style={styles.button}>Sign In Anonymously</button>
+                        </div>
+                    ) : !currentProjectId ? (
+                        <div style={styles.dashboardContainer}>
+                            <h2>Your Projects</h2>
+                            <p>Select a project to continue, or start a new one.</p>
+                            <ul style={styles.projectList}>
+                                {projects.map(p => (
+                                    <li key={p.id} style={styles.projectItem} onClick={() => loadProject(p.id)}>
+                                        <strong>{p.title || 'Untitled Project'}</strong>
+                                        <br />
+                                        <small>Last updated: {p.lastUpdated ? new Date(p.lastUpdated.seconds * 1000).toLocaleString() : 'N/A'}</small>
+                                    </li>
+                                ))}
+                            </ul>
+                            <button onClick={handleStartNewProject} style={styles.button}>+ Start New Project</button>
+                        </div>
                     ) : (
                         <>
-                            {messages.map((msg) => (<ChatMessage key={msg.id} message={msg} />))}
-                            {isBotTyping && (
-                                <div style={styles.messageContainer(true)}>
-                                    <div style={styles.iconContainer}><BotIcon /></div>
-                                    <div style={styles.messageBubble(true)}>
-                                        <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
-                                            <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out'}}></span>
-                                            <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out .25s'}}></span>
-                                            <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out .5s'}}></span>
+                            {conversationStage === 'finished_project' ? (
+                                <FinalProjectDisplay finalDocument={finalProjectDocument} onRestart={() => setCurrentProjectId(null)} />
+                            ) : (
+                                <>
+                                    {messages.map((msg) => (<ChatMessage key={msg.id} message={msg} />))}
+                                    {isBotTyping && (
+                                        <div style={styles.messageContainer(true)}>
+                                            <div style={styles.iconContainer}><BotIcon /></div>
+                                            <div style={styles.messageBubble(true)}>
+                                                <div style={{display: 'flex', alignItems: 'center', gap: '4px'}}>
+                                                    <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out'}}></span>
+                                                    <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out .25s'}}></span>
+                                                    <span style={{height: '8px', width: '8px', backgroundColor: '#818cf8', borderRadius: '50%', animation: 'pulse 1.5s infinite ease-in-out .5s'}}></span>
+                                                </div>
+                                            </div>
                                         </div>
-                                    </div>
-                                </div>
+                                    )}
+                                    <div ref={chatEndRef} />
+                                </>
                             )}
-                            <div ref={chatEndRef} />
                         </>
                     )}
                 </div>
             </main>
-            {conversationStage !== 'finished_project' && (
+            {user && currentProjectId && conversationStage !== 'finished_project' && (
                 <footer style={styles.footer}>
                     <div style={styles.contentWrapper}>
                         <div style={styles.inputArea}>
