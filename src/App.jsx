@@ -66,7 +66,30 @@ const ChatMessage = ({ message }) => {
 };
 
 const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
-    // ... (Component logic is unchanged)
+    const [copySuccess, setCopySuccess] = useState('');
+    const handleCopy = () => {
+        const textarea = document.createElement('textarea');
+        textarea.value = finalDocument;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            setCopySuccess('Copied!');
+            setTimeout(() => setCopySuccess(''), 2000);
+        } catch (err) {
+            setCopySuccess('Failed to copy');
+        }
+        document.body.removeChild(textarea);
+    };
+    return (
+        <div style={styles.summaryContainer}>
+            <div dangerouslySetInnerHTML={renderMarkdown(finalDocument)} />
+            <div style={styles.summaryActions}>
+                <button onClick={handleCopy} style={styles.actionButton}>{copySuccess || 'Copy to Clipboard'}</button>
+                <button onClick={onRestart} style={styles.actionButton}>Back to Dashboard</button>
+            </div>
+        </div>
+    );
 };
 
 // --- MAIN APP COMPONENT (V9.8) ---
