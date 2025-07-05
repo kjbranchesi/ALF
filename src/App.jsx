@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V9: FIREBASE IMPORTS ---
-import { auth, db } from './firebase'; // Import from our new config file
+// --- V9: FIREBASE IMPORTS (V9.1 DEPLOY FIX) ---
+import { auth, db } from './firebase.js'; // Corrected import path with .js extension
 import { onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, getDocs, getDoc, setDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
 
@@ -302,7 +302,7 @@ export default function App() {
 
         try {
             const result = await callApi(historyToSend);
-            if (result.candidates && result.candidates[0].content) {
+            if (result.candidates && result.candidates.length > 0) {
                 let text = result.candidates[0].content.parts[0].text;
                 const newHistory = [...currentHistory, { role: "model", parts: [{ text }] }];
                 setConversationHistory(newHistory);
