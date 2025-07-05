@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V7 PROMPT IMPORTS ---
+// --- V7.2 PROMPT IMPORTS ---
 import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
 import { intakeSafetyCheckPrompt } from './prompts/intake_safety_check_prompt.js';
@@ -56,17 +56,17 @@ const ChatMessage = ({ message }) => {
 };
 
 
-// --- MAIN APP COMPONENT (V7 REWRITE) ---
+// --- MAIN APP COMPONENT (V7.2 REWRITE) ---
 export default function App() {
     // --- STATE MANAGEMENT ---
     const [messages, setMessages] = useState([]);
     const [conversationHistory, setConversationHistory] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [isBotTyping, setIsBotTyping] = useState(false);
-    // V7 REFACTOR: Removed finalCurriculum state. The curriculum will now be a regular message.
     const [conversationStage, setConversationStage] = useState('welcome');
     const [ageGroupPrompt, setAgeGroupPrompt] = useState('');
     const [intakeAnswers, setIntakeAnswers] = useState({});
+    const [finalCurriculumText, setFinalCurriculumText] = useState('');
 
     const chatEndRef = useRef(null);
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -111,7 +111,7 @@ export default function App() {
     const runIntakeSafetyCheck = async (userInput) => {
         const checkPrompt = intakeSafetyCheckPrompt.replace("[USER'S RESPONSE]", userInput);
         const result = await callApi([{ role: "user", parts: [{ text: checkPrompt }] }]);
-        return result.candidates?.[0]?.content.parts[0].text.trim() || "SAFE";
+        return result.candidates?.[0]?.content.parts[0].text.trim().replace(/[.,]/g, '') || "SAFE";
     };
 
     const runMainSafetyCheck = async (catalystText) => {
@@ -120,7 +120,6 @@ export default function App() {
         return result.candidates?.[0]?.content.parts[0].text.trim() || "Error";
     };
 
-    // V7 REFACTOR: generateAiResponse is now streamlined.
     const generateAiResponse = async (currentHistory, isAssignment = false) => {
         setIsBotTyping(true);
         let historyForApi = [...currentHistory];
@@ -129,7 +128,7 @@ export default function App() {
         }
         try {
             const result = await callApi(historyForApi);
-            if (result.candidates && result.candidates[0].content) {
+            if (result.candidates && result.candidates.length > 0) {
                 let text = result.candidates[0].content.parts[0].text;
                 const newHistory = [...currentHistory, { role: "model", parts: [{ text }] }];
                 setConversationHistory(newHistory);
@@ -149,8 +148,9 @@ export default function App() {
                         setConversationStage('catalyst_planning');
                     }
                 } else if (text.includes(COMPLETION_SIGNAL)) {
-                    // V7 WORKFLOW: Post curriculum and assignment offer directly to chat.
                     const curriculumText = text.replace(COMPLETION_SIGNAL, "").trim();
+                    setFinalCurriculumText(curriculumText);
+                    
                     const curriculumMessage = { text: curriculumText, sender: 'bot', id: Date.now() };
                     const assignmentOffer = { text: "We now have a strong foundation for our curriculum. Shall we now proceed to build out the detailed, scaffolded assignments for the students?", sender: 'bot', id: Date.now() + 1 };
                     
@@ -172,14 +172,17 @@ export default function App() {
         }
     };
     
-    // --- `handleSendMessage` LOGIC HUB ---
+    // --- `handleSendMessage` LOGIC HUB (V7.2 REWRITE) ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
         setMessages(prev => [...prev, userMessage]);
+        
         const currentInput = inputValue;
-        setInputValue('');
+        const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
+        setConversationHistory(updatedHistory);
 
+        setInputValue('');
         setIsBotTyping(true);
 
         try {
@@ -207,7 +210,7 @@ export default function App() {
                 case 'awaiting_intake_1': {
                     setIntakeAnswers({ experience: currentInput });
                     const systemPrompt = `${intakePrompt}\nThe user has responded to Question 1. Their experience level is: '${currentInput}'. Now, follow your protocol to provide the correct pedagogical onboarding (Path A or B) and ask Question 2.`;
-                    await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
+                    await generateAiResponse(updatedHistory);
                     setConversationStage('awaiting_intake_2');
                     break;
                 }
@@ -221,7 +224,13 @@ export default function App() {
                     }
                     
                     setIntakeAnswers(prev => ({ ...prev, idea: currentInput }));
-                    const systemPrompt = `${intakePrompt}\nThe user has responded to Question 2. Their idea is: '${currentInput}'. The safety check result is '${sentiment}'. Follow your protocol and ask Question 3.`;
+                    
+                    let systemInstruction = intakePrompt;
+                    if (sentiment === 'QUESTIONABLE') {
+                        systemInstruction = `# SPECIAL INSTRUCTION: The user has proposed a sensitive topic. Adopt a neutral, probing tone as you ask the next question. Do not use positive affirmations.\n\n${intakePrompt}`;
+                    }
+                    
+                    const systemPrompt = `${systemInstruction}\nThe user has responded to Question 2. Their idea is: '${currentInput}'. Follow your protocol and ask Question 3.`;
                     await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
                     setConversationStage('awaiting_intake_3');
                     break;
@@ -240,32 +249,23 @@ export default function App() {
                     setConversationStage('catalyst_planning');
                     break;
                 }
-                // V7 REFACTOR: All planning stages now fall through to the same logic.
-                case 'catalyst_planning':
-                case 'issues_planning':
-                case 'method_planning':
-                case 'engagement_planning':
-                case 'generating_assignments': // Assignment generation is now a standard chat turn
-                case 'follow_up': {
-                    const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
-                    const isAssignment = conversationStage === 'awaiting_assignments' && currentInput.toLowerCase().includes('yes');
-                    if (isAssignment) {
-                        setConversationStage('generating_assignments');
-                    }
-                    await generateAiResponse(updatedHistory, isAssignment);
-                    break;
-                }
                 case 'awaiting_assignments': {
                     if (currentInput.toLowerCase().includes('yes')) {
                         setConversationStage('generating_assignments');
-                        // Pass the entire history to get the assignments
-                        await generateAiResponse(conversationHistory, true);
+                        const assignmentHistory = [{
+                            role: "user",
+                            parts: [{ text: `Here is the curriculum we designed:\n\n${finalCurriculumText}` }]
+                        }];
+                        await generateAiResponse(assignmentHistory, true);
                     } else {
                         setMessages(prev => [...prev, { text: "No problem! Feel free to ask any other follow-up questions.", sender: 'bot', id: Date.now() + 1 }]);
                         setConversationStage('follow_up');
                         setIsBotTyping(false);
                     }
                     break;
+                }
+                default: {
+                    await generateAiResponse(updatedHistory);
                 }
             }
         } catch (error) {
@@ -282,12 +282,10 @@ export default function App() {
         <div style={styles.appContainer}>
             <header style={styles.header}>
                 <h1 style={styles.headerTitle}>ALF - The Active Learning Framework Coach</h1>
-                {/* V7 WORKFLOW: Added a persistent restart button */}
                 <button onClick={handleRestart} style={styles.restartButton}>Start New Plan</button>
             </header>
             <main style={styles.mainContent}>
                 <div style={styles.contentWrapper}>
-                    {/* V7 WORKFLOW: Removed the SummaryDisplay component entirely for a unified chat UI */}
                     {messages.map((msg) => (<ChatMessage key={msg.id} message={msg} />))}
                     {isBotTyping && (
                         <div style={styles.messageContainer(true)}>
