@@ -25,7 +25,7 @@ const styles = {
   headerSlogan: { fontSize: '0.875rem', color: '#6b7280', margin: 0, marginTop: '4px' },
   authButton: { backgroundColor: '#eef2ff', color: '#4f46e5', fontWeight: 'bold', padding: '8px 16px', borderRadius: '8px', border: '1px solid #4f46e5', cursor: 'pointer', transition: 'background-color 0.2s' },
   mainContent: { flex: 1, overflowY: 'auto', width: '100%' },
-  contentWrapper: { width: '100%', maxWidth: '1024px', margin: '0 auto', padding: '0 24px 24px 24px' }, // V9.7: Constrain chat for readability, but allow full-width background
+  contentWrapper: { width: '100%', maxWidth: '1024px', margin: '0 auto', padding: '0 24px 24px 24px' },
   footer: { backgroundColor: 'white', borderTop: '1px solid #e5e7eb', padding: '16px', flexShrink: 0 },
   inputArea: { maxWidth: '1024px', margin: '0 auto', display: 'flex', alignItems: 'center', backgroundColor: '#f3f4f6', borderRadius: '8px', padding: '8px' },
   textarea: { width: '100%', backgroundColor: 'transparent', padding: '8px', color: '#1f2937', border: 'none', outline: 'none', resize: 'none', fontSize: '1rem' },
@@ -68,7 +68,30 @@ const ChatMessage = ({ message }) => {
 };
 
 const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
-    // ... (Component logic is unchanged)
+    const [copySuccess, setCopySuccess] = useState('');
+    const handleCopy = () => {
+        const textarea = document.createElement('textarea');
+        textarea.value = finalDocument;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            setCopySuccess('Copied!');
+            setTimeout(() => setCopySuccess(''), 2000);
+        } catch (err) {
+            setCopySuccess('Failed to copy');
+        }
+        document.body.removeChild(textarea);
+    };
+    return (
+        <div style={styles.summaryContainer}>
+            <div dangerouslySetInnerHTML={renderMarkdown(finalDocument)} />
+            <div style={styles.summaryActions}>
+                <button onClick={handleCopy} style={styles.actionButton}>{copySuccess || 'Copy to Clipboard'}</button>
+                <button onClick={onRestart} style={styles.actionButton}>Back to Dashboard</button>
+            </div>
+        </div>
+    );
 };
 
 // --- MAIN APP COMPONENT (V9.7) ---
@@ -112,7 +135,7 @@ export default function App() {
 
     useEffect(() => {
         const save = async () => {
-            if (currentProjectId && user && conversationHistory.length > 2) { // Save after first real turn
+            if (currentProjectId && user && conversationHistory.length > 2) {
                 await saveConversation();
             }
         };
@@ -157,7 +180,6 @@ export default function App() {
         setConversationHistory(initialHistory);
         setConversationStage('select_age');
         setCurrentProjectId(`temp_${Date.now()}`); 
-        // Reset other states
         setFinalCurriculumText('');
         setGeneratedAssignments([]);
         setFinalProjectDocument('');
@@ -206,29 +228,79 @@ export default function App() {
 
     // --- API & RESPONSE LOGIC (Restored from V8.1) ---
     const callApi = async (history) => {
-        // ... (function is unchanged)
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+        const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: history }) });
+        if (!response.ok) throw new Error(`API call failed: ${response.status}`);
+        return await response.json();
     };
 
-    const generateAiResponse = async (currentHistory) => {
+    const generateAiResponse = async (currentHistory, useSummary = true) => {
         setIsBotTyping(true);
+        let historyToSend = [...currentHistory];
+        if (useSummary && sessionSummary) {
+            const summaryInstruction = { 
+                role: "user", 
+                parts: [{ text: `# CONTEXT\nHere is a summary of our key decisions so far: "${sessionSummary}". Keep this context in mind as you respond.` }]
+            };
+            historyToSend.splice(historyToSend.length - 1, 0, summaryInstruction);
+        }
+
         try {
-            const result = await callApi(currentHistory);
+            const result = await callApi(historyToSend);
             if (result.candidates && result.candidates[0].content) {
                 let text = result.candidates[0].content.parts[0].text;
                 const newHistory = [...currentHistory, { role: "model", parts: [{ text }] }];
                 setConversationHistory(newHistory);
-                setMessages(prev => [...prev, { text, sender: 'bot', id: Date.now() }]);
+                
+                const CATALYST_SIGNAL = "<<<CATALYST_DEFINED>>>";
+                const COMPLETION_SIGNAL = "<<<CURRICULUM_COMPLETE>>>";
+                const ASSIGNMENTS_COMPLETE_SIGNAL = "<<<ASSIGNMENTS_COMPLETE>>>";
+
+                if (text.includes(CATALYST_SIGNAL)) {
+                    const summary = text.replace(CATALYST_SIGNAL, "").trim();
+                    const safetyResult = await runMainSafetyCheck(summary);
+                    if (safetyResult === "PROCEED") {
+                        const transitionMessage = newHistory[newHistory.length - 1].parts[0].text.replace(CATALYST_SIGNAL, "").trim();
+                        setMessages(prev => [...prev, { text: transitionMessage, sender: 'bot', id: Date.now() }]);
+                        setConversationStage('issues_planning');
+                    } else {
+                        setMessages(prev => [...prev, { text: safetyResult, sender: 'bot', id: Date.now() }]);
+                        setConversationStage('catalyst_planning');
+                    }
+                } else if (text.includes(COMPLETION_SIGNAL)) {
+                    const curriculumText = text.replace(COMPLETION_SIGNAL, "").trim();
+                    setFinalCurriculumText(curriculumText);
+                    await summarizeKeyDecisions(newHistory); 
+                    const curriculumMessage = { text: curriculumText, sender: 'bot', id: Date.now() };
+                    const assignmentOffer = { text: "We now have a strong foundation for our curriculum. Shall we now proceed to build out the detailed, scaffolded assignments for the students?", sender: 'bot', id: Date.now() + 1 };
+                    setMessages(prev => [...prev, curriculumMessage, assignmentOffer]);
+                    setConversationStage('awaiting_assignments_confirmation');
+                } else if (text.includes(ASSIGNMENTS_COMPLETE_SIGNAL)) {
+                    const lastAssignmentText = text.replace(ASSIGNMENTS_COMPLETE_SIGNAL, "").trim();
+                    const allAssignments = [...generatedAssignments, lastAssignmentText].join('\n\n');
+                    const fullDocument = `${finalCurriculumText}\n\n---\n\n## Scaffolded Assignments\n\n${allAssignments}`;
+                    setFinalProjectDocument(fullDocument);
+                    setConversationStage('finished_project');
+                }
+                else {
+                    if (conversationStage === 'designing_assignments_main') {
+                        setGeneratedAssignments(prev => [...prev, text]);
+                    }
+                    setMessages(prev => [...prev, { text, sender: 'bot', id: Date.now() }]);
+                }
             } else {
-                setMessages(prev => [...prev, { text: "Sorry, I couldn't generate a response.", sender: 'bot', id: Date.now() }]);
+                let errorMessage = "Sorry, I couldn't generate a response.";
+                if (result.candidates?.[0]?.finishReason === "SAFETY") errorMessage = "The response was blocked for safety reasons. Please rephrase your input.";
+                setMessages(prev => [...prev, { text: errorMessage, sender: 'bot', id: Date.now() }]);
             }
         } catch (error) {
-            console.error("AI response error:", error);
-            setMessages(prev => [...prev, { text: "Sorry, an error occurred.", sender: 'bot', id: Date.now() }]);
+            console.error("Error generating AI response:", error);
+            setMessages(prev => [...prev, { text: "Sorry, I encountered an error connecting to the AI.", sender: 'bot', id: Date.now() }]);
         } finally {
             setIsBotTyping(false);
         }
     };
-
+    
     // V9.7: THE CONVERSATIONAL ENGINE IS RESTORED
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
@@ -244,26 +316,97 @@ export default function App() {
 
         try {
             switch (conversationStage) {
-                // This entire switch block is the restored logic from V8.1
                 case 'select_age': {
-                    // This logic remains the same as V8.1
-                    // ...
+                    const category = await getAgeGroupFromAI(currentInput);
+                    if (category) {
+                        setAgeGroup(category);
+                        let selectedPrompt = '';
+                        if (category === 'Early Primary') selectedPrompt = earlyPrimaryPrompt;
+                        else if (category === 'Primary') selectedPrompt = primaryPrompt;
+                        else if (category === 'Middle School') selectedPrompt = middleSchoolPrompt;
+                        else if (category === 'High School') selectedPrompt = highSchoolPrompt;
+                        else if (category === 'University') selectedPrompt = universityPrompt;
+                        setAgeGroupPrompt(selectedPrompt);
+                        
+                        const systemPrompt = `${intakePrompt}\nAsk Intake Question 1.`;
+                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }], false);
+                        setConversationStage('awaiting_intake_1');
+                    } else {
+                        setMessages(prev => [...prev, { text: "I'm sorry, I couldn't determine the age group. Could you please try again?", sender: 'bot', id: Date.now() + 1 }]);
+                        setIsBotTyping(false);
+                    }
                     break;
                 }
                 case 'awaiting_intake_1': {
-                    // ...
+                    setIntakeAnswers({ experience: currentInput });
+                    const systemPrompt = `${intakePrompt}\nThe user has responded to Question 1. Their experience level is: '${currentInput}'. Now, follow your protocol to provide the correct pedagogical onboarding (Path A or B) and ask Question 2.`;
+                    await generateAiResponse(updatedHistory, false);
+                    setConversationStage('awaiting_intake_2');
                     break;
                 }
                 case 'awaiting_intake_2': {
-                    // ...
+                    const lowerCaseInput = currentInput.toLowerCase();
+                    const needsIdeas = ['no', 'not yet', 'don\'t know', 'need help', 'need ideas', 'explore'].some(term => lowerCaseInput.includes(term));
+
+                    if (needsIdeas) {
+                        setIntakeAnswers(prev => ({ ...prev, idea: 'User needs help brainstorming' }));
+                        const systemPrompt = `${intakePrompt}\nThe user has indicated they need help brainstorming a topic. Follow Path C.`;
+                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }], false);
+                        setConversationStage('awaiting_intake_2');
+                        setIsBotTyping(false);
+                        return;
+                    }
+
+                    const sentiment = await runIntakeSafetyCheck(currentInput);
+                    if (sentiment === 'UNSAFE') {
+                        setMessages(prev => [...prev, { text: "I cannot proceed with that topic as it violates safety guidelines. Please choose a different theme.", sender: 'bot', id: Date.now() + 1 }]);
+                        setConversationStage('awaiting_intake_2');
+                        setIsBotTyping(false);
+                        return;
+                    }
+                    
+                    setIntakeAnswers(prev => ({ ...prev, idea: currentInput }));
+                    
+                    let systemInstruction = intakePrompt;
+                    if (sentiment === 'QUESTIONABLE') {
+                        systemInstruction = `# SPECIAL INSTRUCTION: The user has proposed a sensitive topic. Adopt a neutral, probing tone as you ask the next question. Do not use positive affirmations.\n\n${intakePrompt}`;
+                    }
+                    
+                    const systemPrompt = `${systemInstruction}\nThe user has responded to Question 2 with a topic. Their idea is: '${currentInput}'. Follow your protocol and ask Question 3.`;
+                    await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }], false);
+                    setConversationStage('awaiting_intake_3');
                     break;
                 }
                 case 'awaiting_intake_3': {
-                    // ...
+                    const finalIntakeAnswers = { ...intakeAnswers, constraints: currentInput };
+                    const finalSystemPrompt = `${basePrompt}\n${ageGroupPrompt}\n# USER CONTEXT FROM INTAKE:\n- User's experience with PBL: ${finalIntakeAnswers.experience}\n- User's starting idea: ${finalIntakeAnswers.idea}\n- User's project constraints: ${finalIntakeAnswers.constraints}`;
+                    const kickoffMessage = "Excellent, this is all incredibly helpful context. Let's get started.";
+                    
+                    setMessages(prev => [...prev, { text: kickoffMessage, sender: 'bot', id: Date.now() + 1 }]);
+                    
+                    const initialHistory = [{ role: "user", parts: [{ text: finalSystemPrompt }] }, { role: "model", parts: [{ text: kickoffMessage }] }];
+                    setConversationHistory(initialHistory);
+                    
+                    await generateAiResponse(initialHistory, false);
+                    setConversationStage('catalyst_planning');
                     break;
                 }
                 case 'awaiting_assignments_confirmation': {
-                    // ...
+                    if (currentInput.toLowerCase().includes('yes')) {
+                        setConversationStage('designing_assignments_intro');
+                        const systemPrompt = `${assignmentGeneratorPrompt}\n\nHere is the curriculum we designed:\n\n${finalCurriculumText}\n\nNow, begin the assignment design workflow. Start with Step 1: Propose the Scaffolding Strategy for the ${ageGroup} age group.`;
+                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
+                    } else {
+                        setMessages(prev => [...prev, { text: "No problem! Feel free to ask any other follow-up questions.", sender: 'bot', id: Date.now() + 1 }]);
+                        setConversationStage('follow_up');
+                        setIsBotTyping(false);
+                    }
+                    break;
+                }
+                case 'designing_assignments_intro':
+                case 'designing_assignments_main': {
+                    setConversationStage('designing_assignments_main');
+                    await generateAiResponse(updatedHistory);
                     break;
                 }
                 default: {
@@ -315,14 +458,20 @@ export default function App() {
                         </div>
                     ) : (
                         <>
-                            {messages.map((msg) => (<ChatMessage key={msg.id} message={msg} />))}
-                            {isBotTyping && ( <div style={styles.messageContainer(true)}><div style={styles.iconContainer}><BotIcon /></div><div style={styles.messageBubble(true)}>...</div></div> )}
-                            <div ref={chatEndRef} />
+                            {conversationStage === 'finished_project' ? (
+                                <FinalProjectDisplay finalDocument={finalProjectDocument} onRestart={() => setCurrentProjectId(null)} />
+                            ) : (
+                                <>
+                                    {messages.map((msg) => (<ChatMessage key={msg.id} message={msg} />))}
+                                    {isBotTyping && ( <div style={styles.messageContainer(true)}><div style={styles.iconContainer}><BotIcon /></div><div style={styles.messageBubble(true)}>...</div></div> )}
+                                    <div ref={chatEndRef} />
+                                </>
+                            )}
                         </>
                     )}
                 </div>
             </main>
-            {user && currentProjectId && (
+            {user && currentProjectId && conversationStage !== 'finished_project' && (
                 <footer style={styles.footer}>
                     <div style={styles.inputArea}>
                         <textarea ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyPress={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())} placeholder="Type your response here..." style={styles.textarea} disabled={isBotTyping} />
