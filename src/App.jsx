@@ -18,14 +18,16 @@ import { middleSchoolPrompt } from './prompts/middle_school_prompt.js';
 import { highSchoolPrompt } from './prompts/high_school_prompt.js';
 import { universityPrompt } from './prompts/university_prompt.js';
 
-// --- STYLING & ICONS ---
+// --- STYLING & ICONS (V9.6 Update) ---
 const styles = {
   appContainer: { fontFamily: 'sans-serif', backgroundColor: '#f3f4f6', display: 'flex', flexDirection: 'column', height: '100vh' },
-  header: { backgroundColor: 'white', padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10 },
-  headerTitle: { fontSize: '1.25rem', fontWeight: 'bold', color: '#1f2937' },
+  header: { backgroundColor: 'white', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10 },
+  headerTitleContainer: { display: 'flex', flexDirection: 'column' },
+  headerTitle: { fontSize: '1.25rem', fontWeight: 'bold', color: '#1f2937', margin: 0 },
+  headerSlogan: { fontSize: '0.875rem', color: '#6b7280', margin: 0, marginTop: '4px' }, // V9.6: Slogan style
   authButton: { backgroundColor: '#eef2ff', color: '#4f46e5', fontWeight: 'bold', padding: '8px 16px', borderRadius: '8px', border: '1px solid #4f46e5', cursor: 'pointer', transition: 'background-color 0.2s' },
-  mainContent: { flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', justifyContent: 'center' },
-  contentWrapper: { width: '100%', maxWidth: '896px', margin: '0 auto' },
+  mainContent: { flex: 1, overflowY: 'auto', padding: '24px' }, // V9.6: Removed justifyContent
+  contentWrapper: { width: '100%', maxWidth: '1024px', margin: '0 auto' }, // V9.6: Increased max-width for a wider feel
   footer: { backgroundColor: 'white', borderTop: '1px solid #e5e7eb', padding: '16px' },
   inputArea: { display: 'flex', alignItems: 'center', backgroundColor: '#f3f4f6', borderRadius: '8px', padding: '8px' },
   textarea: { width: '100%', backgroundColor: 'transparent', padding: '8px', color: '#1f2937', border: 'none', outline: 'none', resize: 'none', fontSize: '1rem' },
@@ -95,15 +97,13 @@ const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
 };
 
 
-// --- MAIN APP COMPONENT (V9.3 MERGE) ---
+// --- MAIN APP COMPONENT (V9.6 MERGE) ---
 export default function App() {
-    // --- V9 STATE ---
+    // --- STATE ---
     const [user, setUser] = useState(null);
     const [isAuthReady, setIsAuthReady] = useState(false);
     const [projects, setProjects] = useState([]);
     const [currentProjectId, setCurrentProjectId] = useState(null);
-
-    // --- V8.1 STATE ---
     const [messages, setMessages] = useState([]);
     const [conversationHistory, setConversationHistory] = useState([]);
     const [inputValue, setInputValue] = useState('');
@@ -118,9 +118,10 @@ export default function App() {
     const [sessionSummary, setSessionSummary] = useState('');
 
     const chatEndRef = useRef(null);
+    const inputRef = useRef(null); // V9.6: Ref for the input field
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-    // --- V9 EFFECTS ---
+    // --- EFFECTS ---
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             if (user) {
@@ -147,9 +148,13 @@ export default function App() {
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        // V9.6: Auto-focus the input field after a new message arrives
+        if (inputRef.current) {
+            inputRef.current.focus();
+        }
     }, [messages, isBotTyping]);
 
-    // --- V9 DATABASE & AUTH FUNCTIONS ---
+    // --- DATABASE & AUTH FUNCTIONS ---
     const handleSignIn = async () => {
         try {
             await signInAnonymously(auth);
@@ -297,7 +302,10 @@ export default function App() {
     return (
         <div style={styles.appContainer}>
             <header style={styles.header}>
-                <h1 style={styles.headerTitle}>ALF Coach V9.3</h1>
+                <div style={styles.headerTitleContainer}>
+                    <h1 style={styles.headerTitle}>ALF: The Active Learning Framework Coach</h1>
+                    <p style={styles.headerSlogan}>Your Partner in Creative Curriculum</p>
+                </div>
                 {user && <button onClick={handleSignOut} style={styles.authButton}>Sign Out</button>}
             </header>
             <main style={styles.mainContent}>
@@ -353,7 +361,7 @@ export default function App() {
                 <footer style={styles.footer}>
                     <div style={styles.contentWrapper}>
                         <div style={styles.inputArea}>
-                            <textarea value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyPress={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())} placeholder="Type your response here..." style={styles.textarea} disabled={isBotTyping} />
+                            <textarea ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyPress={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())} placeholder="Type your response here..." style={styles.textarea} disabled={isBotTyping} />
                             <button onClick={handleSendMessage} disabled={!inputValue.trim() || isBotTyping} style={{...styles.sendButton, ...(isBotTyping || !inputValue.trim() ? styles.sendButtonDisabled : {})}}>
                                 <SendIcon />
                             </button>
