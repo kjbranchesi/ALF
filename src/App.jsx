@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V10: FIREBASE & PROMPT IMPORTS (No change) ---
+// --- V11: FIREBASE & PROMPT IMPORTS ---
 import { auth, db } from './firebase.js';
 import { onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, getDocs, getDoc, setDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
@@ -15,8 +15,11 @@ import { primaryPrompt } from './prompts/primary_prompt.js';
 import { middleSchoolPrompt } from './prompts/middle_school_prompt.js';
 import { highSchoolPrompt } from './prompts/high_school_prompt.js';
 import { universityPrompt } from './prompts/university_prompt.js';
+// V11: Import the new image generator prompt
+import { imageGeneratorPrompt } from './prompts/image_generator_prompt.js';
 
-// --- STYLING & ICONS (V10.5 Update) ---
+
+// --- STYLING & ICONS (V11 Update) ---
 const styles = {
   appContainer: { fontFamily: 'sans-serif', backgroundColor: '#f3f4f6', display: 'flex', flexDirection: 'column', height: '100vh' },
   header: { backgroundColor: 'white', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10, flexShrink: 0 },
@@ -47,7 +50,23 @@ const styles = {
   searchResultCard: { border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px', backgroundColor: 'white', marginTop: '12px' },
   searchResultTitle: { fontWeight: 'bold', color: '#4f46e5', textDecoration: 'none' },
   searchResultSnippet: { fontSize: '0.875rem', color: '#6b7280', marginTop: '4px' },
+  // V11: Styles for generated image and loading state
+  generatedImage: { maxWidth: '100%', height: 'auto', borderRadius: '8px', marginTop: '12px' },
+  loadingSpinner: { border: '4px solid #f3f3f3', borderTop: '4px solid #4f46e5', borderRadius: '50%', width: '40px', height: '40px', animation: 'spin 1s linear infinite', margin: '16px auto' },
 };
+
+// V11: Keyframes for loading spinner
+const keyframes = `
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+`;
+const styleSheet = document.createElement("style");
+styleSheet.innerText = keyframes;
+document.head.appendChild(styleSheet);
+
+
 const BotIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '32px', width: '32px', color: '#4f46e5'}} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>);
 const UserIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '32px', width: '32px', color: '#6b7280'}} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>);
 const SendIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '24px', width: '24px'}} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>);
@@ -67,8 +86,9 @@ const SearchResultCard = ({ result }) => (
     </div>
 );
 
+// V11: Updated ChatMessage to handle images
 const ChatMessage = ({ message }) => {
-    const { text, sender, searchResults } = message;
+    const { text, sender, searchResults, imageUrl, isLoadingImage } = message;
     const isBot = sender === 'bot';
     return (
         <div style={styles.messageContainer(isBot)}>
@@ -82,6 +102,8 @@ const ChatMessage = ({ message }) => {
                         ))}
                     </div>
                 )}
+                {isLoadingImage && <div style={styles.loadingSpinner}></div>}
+                {imageUrl && <img src={imageUrl} alt="Generated concept art" style={styles.generatedImage} />}
             </div>
             {!isBot && <div style={styles.iconContainer}><UserIcon /></div>}
         </div>
@@ -115,7 +137,7 @@ const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
     );
 };
 
-// --- MAIN APP COMPONENT (V10.5) ---
+
 export default function App() {
     // --- STATE & REFS ---
     const [user, setUser] = useState(null);
@@ -136,7 +158,12 @@ export default function App() {
     const [sessionSummary, setSessionSummary] = useState('');
     const inputRef = useRef(null);
     const chatEndRef = useRef(null);
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    
+    // Use environment variables for API keys
+    const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const googleSearchApiKey = import.meta.env.VITE_GOOGLE_SEARCH_API_KEY;
+    const googleSearchCx = import.meta.env.VITE_GOOGLE_SEARCH_CX;
+
 
     // --- EFFECTS ---
     useEffect(() => {
@@ -168,7 +195,6 @@ export default function App() {
         setProjects(projectSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     };
     
-    // V10.5 TONE FIX: Updated the initial prompt instruction for a warmer, less "cheesy" tone.
     const handleStartNewProject = () => {
         setMessages([]);
         const initialHistory = [{ role: 'user', parts: [{ text: basePrompt }] }, { role: 'model', parts: [{ text: "Understood. I am the ALF Coach." }] }];
@@ -224,25 +250,62 @@ export default function App() {
     };
 
     // --- API & RESPONSE LOGIC ---
-    const callApi = async (payload) => {
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const callGeminiApi = async (payload) => {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`;
         const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         if (!response.ok) {
             const errorBody = await response.text();
-            throw new Error(`API call failed with status: ${response.status}. Response: ${errorBody}`);
+            throw new Error(`Gemini API call failed with status: ${response.status}. Response: ${errorBody}`);
         }
         return await response.json();
+    };
+
+    // V11: New function to call the image generation API
+    const callImagenApi = async (prompt) => {
+        const payload = { instances: [{ prompt }], parameters: { "sampleCount": 1 } };
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${geminiApiKey}`;
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Imagen API call failed with status: ${response.status}. Response: ${errorBody}`);
+        }
+        const result = await response.json();
+        if (result.predictions && result.predictions.length > 0 && result.predictions[0].bytesBase64Encoded) {
+            return `data:image/png;base64,${result.predictions[0].bytesBase64Encoded}`;
+        }
+        return null;
+    };
+
+    // V11: New function to call the Google Search API
+    const performGoogleSearch = async (queries) => {
+        const query = encodeURIComponent(queries.join(" "));
+        const url = `https://www.googleapis.com/customsearch/v1?key=${googleSearchApiKey}&cx=${googleSearchCx}&q=${query}&num=3`;
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Google Search API failed with status: ${response.status}`);
+            const data = await response.json();
+            return data.items.map(item => ({
+                url: item.link,
+                source_title: item.title,
+                snippet: item.snippet
+            }));
+        } catch (error) {
+            console.error("Google Search failed:", error);
+            return [{ source_title: "Search Failed", snippet: "Could not retrieve live search results.", url: "#" }];
+        }
     };
     
     const getAgeGroupFromAI = async (userInput) => {
         const sorterPrompt = `You are an input sorter. Your job is to categorize the user's input into one of five specific categories: 'Early Primary', 'Primary', 'Middle School', 'High School', or 'University'. The user's input is: '${userInput}'. Respond with ONLY the category name and nothing else.`;
-        const result = await callApi({ contents: [{ role: "user", parts: [{ text: sorterPrompt }] }] });
+        const result = await callGeminiApi({ contents: [{ role: "user", parts: [{ text: sorterPrompt }] }] });
         if (result.candidates && result.candidates.length > 0 && result.candidates[0].content.parts[0].text) {
             const category = result.candidates[0].content.parts[0].text.trim();
             const validCategories = ['Early Primary', 'Primary', 'Middle School', 'High School', 'University'];
-            if (validCategories.includes(category)) {
-                return category;
-            }
+            if (validCategories.includes(category)) { return category; }
         }
         return null;
     };
@@ -259,52 +322,62 @@ export default function App() {
                  historyToSend.push({ role: "user", parts: [{ text: systemInstruction }] });
             }
 
+            // V11: Add the new image generation tool
             const tools = [{
-                "functionDeclarations": [{
-                    "name": "googleSearch_search",
-                    "description": "Returns a list of search results from Google Search for a given query.",
-                    "parameters": {
-                        "type": "OBJECT",
-                        "properties": { "queries": { "type": "ARRAY", "items": { "type": "STRING" } } },
-                        "required": ["queries"]
+                "functionDeclarations": [
+                    {
+                        "name": "googleSearch_search",
+                        "description": "Returns a list of search results from Google Search for a given query.",
+                        "parameters": { "type": "OBJECT", "properties": { "queries": { "type": "ARRAY", "items": { "type": "STRING" } } }, "required": ["queries"] }
+                    },
+                    {
+                        "name": "generateImage_generate",
+                        "description": "Generates a single concept art image from a descriptive text prompt.",
+                        "parameters": { "type": "OBJECT", "properties": { "prompt": { "type": "STRING" } }, "required": ["prompt"] }
                     }
-                }]
+                ]
             }];
 
-            const initialResponse = await callApi({ contents: historyToSend, tools: tools });
+            const initialResponse = await callGeminiApi({ contents: historyToSend, tools: tools });
             const initialCandidate = initialResponse.candidates?.[0];
             
             let finalResponse;
-            let searchResultsForMessage = null;
 
             if (initialCandidate?.content?.parts[0]?.functionCall) {
                 const functionCall = initialCandidate.content.parts[0].functionCall;
+                let toolResponseHistory = [...historyToSend, { role: 'model', parts: [{ functionCall }] }];
+                
                 if (functionCall.name === 'googleSearch_search') {
                     const searchQueries = functionCall.args.queries;
                     const searchMessage = { text: `*Searching for: "${searchQueries.join(", ")}"*`, sender: 'bot', id: Date.now() + '_search' };
                     setMessages(prev => [...prev, searchMessage]);
-
-                    searchResultsForMessage = [{
-                        url: "https://example.com",
-                        source_title: "Simulated Search Result",
-                        snippet: "This is a placeholder. In a real app, this would be live data."
-                    }];
-
-                    const toolResponseHistory = [
-                        ...historyToSend,
-                        { role: 'model', parts: [{ functionCall }] },
-                        {
-                            role: 'function',
-                            parts: [{
-                                functionResponse: {
-                                    name: 'googleSearch_search',
-                                    response: { results: searchResultsForMessage }
-                                }
-                            }]
-                        }
-                    ];
                     
-                    finalResponse = await callApi({ contents: toolResponseHistory });
+                    const searchResults = await performGoogleSearch(searchQueries);
+                    
+                    toolResponseHistory.push({
+                        role: 'function',
+                        parts: [{ functionResponse: { name: 'googleSearch_search', response: { results: searchResults } } }]
+                    });
+                    
+                    finalResponse = await callGeminiApi({ contents: toolResponseHistory });
+                    setConversationHistory(toolResponseHistory);
+
+                } else if (functionCall.name === 'generateImage_generate') {
+                    const imagePrompt = functionCall.args.prompt;
+                    const imageMessageId = Date.now() + '_image';
+                    const imageMessage = { text: `*Generating concept art for: "${imagePrompt}"*`, sender: 'bot', id: imageMessageId, isLoadingImage: true };
+                    setMessages(prev => [...prev, imageMessage]);
+
+                    const imageUrl = await callImagenApi(imagePrompt);
+
+                    setMessages(prev => prev.map(msg => msg.id === imageMessageId ? { ...msg, imageUrl, isLoadingImage: false } : msg));
+
+                    toolResponseHistory.push({
+                        role: 'function',
+                        parts: [{ functionResponse: { name: 'generateImage_generate', response: { status: "Image generated successfully." } } }]
+                    });
+
+                    finalResponse = await callGeminiApi({ contents: toolResponseHistory });
                     setConversationHistory(toolResponseHistory);
                 }
             } else {
@@ -330,7 +403,7 @@ export default function App() {
                     if (conversationStage === 'designing_assignments_main') {
                         setGeneratedAssignments(prev => [...prev, text]);
                     }
-                    const botMessage = { text, sender: 'bot', id: Date.now(), searchResults: searchResultsForMessage };
+                    const botMessage = { text, sender: 'bot', id: Date.now() };
                     setMessages(prev => [...prev, botMessage]);
                 }
             } else {
@@ -345,7 +418,6 @@ export default function App() {
         }
     };
     
-    // --- V10.5: CONVERSATIONAL ENGINE UPDATE ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
@@ -358,7 +430,12 @@ export default function App() {
         
         try {
             let systemInstruction = '';
-            const contextInstruction = `# CONTEXT\nYou are coaching a teacher for the following age group: **${ageGroup}**. You MUST use the pedagogical directives outlined in this specialized prompt:\n\n${ageGroupPrompt}`;
+            let contextInstruction = `# CONTEXT\nYou are coaching a teacher for the following age group: **${ageGroup}**. You MUST use the pedagogical directives outlined in this specialized prompt:\n\n${ageGroupPrompt}`;
+
+            // V11: Add image generation prompt to context during the Method stage
+            if (conversationStage === 'awaiting_method_2') {
+                contextInstruction += `\n\n# AVAILABLE TOOLS\nYou now have a visual tool. Use it if the user describes a compelling visual product.\n\n${imageGeneratorPrompt}`;
+            }
 
             switch (conversationStage) {
                 case 'select_age': {
@@ -375,7 +452,6 @@ export default function App() {
                         setAgeGroup(category);
                         setAgeGroupPrompt(selectedPrompt);
                         
-                        // V10.5 TONE FIX: Updated instruction for a warmer, more professional tone.
                         systemInstruction = `The user has selected **${category}** as their age group. Acknowledge this choice in a warm, professional tone (e.g., "Great, designing for ${category} is a great place to start."), then immediately ask Intake Question 1 from the intake prompt below.\n\n${intakePrompt}`;
                         await generateAiResponse(updatedHistory, systemInstruction);
                         setConversationStage('awaiting_intake_1');
@@ -385,7 +461,7 @@ export default function App() {
                     }
                     break;
                 }
-                // ... (other cases remain largely the same, but now benefit from the improved context)
+                // ... (other cases remain largely the same)
                 default: {
                     await generateAiResponse(updatedHistory, contextInstruction);
                 }
@@ -398,7 +474,7 @@ export default function App() {
     };
 
 
-    // --- RENDER LOGIC (V10.5 Update) ---
+    // --- RENDER LOGIC ---
     if (!isAuthReady) { return <div style={styles.centeredContainer}><h1>Loading ALF Coach...</h1></div>; }
     return (
         <div style={styles.appContainer}>
@@ -408,7 +484,6 @@ export default function App() {
                     <p style={styles.headerSlogan}>Your Partner in Creative Curriculum</p>
                 </div>
                 {user && (
-                    // V10.5 UI UPDATE: Added a container and the new button
                     <div style={styles.headerActions}>
                         <button onClick={handleStartNewProject} style={styles.newProjectButton}>+ New Curriculum</button>
                         <button onClick={handleSignOut} style={styles.authButton}>Sign Out</button>
@@ -444,7 +519,7 @@ export default function App() {
                             ) : (
                                 <>
                                     {messages.map((msg) => (<ChatMessage key={msg.id} message={msg} />))}
-                                    {isBotTyping && ( <div style={styles.messageContainer(true)}><div style={styles.iconContainer}><BotIcon /></div><div style={styles.messageBubble(true)}>...</div></div> )}
+                                    {isBotTyping && !messages.some(m => m.isLoadingImage) && ( <div style={styles.messageContainer(true)}><div style={styles.iconContainer}><BotIcon /></div><div style={styles.messageBubble(true)}>...</div></div> )}
                                     <div ref={chatEndRef} />
                                 </>
                             )}
