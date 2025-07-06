@@ -1,42 +1,23 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
+/* =================================================================
+   App.css for ALF Coach (V10 Modernization)
+   =================================================================
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
+   NOTE: This file is intentionally minimal.
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+   In modern React applications like this one, component-specific
+   styles are often handled directly within the component files
+   (as seen in App.jsx with the 'styles' object) or through
+   CSS-in-JS libraries or utility-first frameworks like Tailwind CSS.
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
+   The original Vite template included styles (e.g., #root, .logo)
+   that were constraining the application layout and causing the
+   width and alignment issues.
 
-.card {
-  padding: 2em;
-}
+   These have been removed to give full stylistic control to the
+   App.jsx component, which now manages its own layout, ensuring a
+   predictable, full-screen experience without conflicts from
+   global stylesheets.
 
-.read-the-docs {
-  color: #888;
-}
+   Any future global styles (like CSS variable definitions or
+   very basic resets) could be added here.
+*/
