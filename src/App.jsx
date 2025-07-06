@@ -23,6 +23,7 @@ const styles = {
   headerTitleContainer: { display: 'flex', flexDirection: 'column' },
   headerTitle: { fontSize: '1.25rem', fontWeight: 'bold', color: '#1f2937', margin: 0 },
   headerSlogan: { fontSize: '0.875rem', color: '#6b7280', margin: 0, marginTop: '4px' },
+  // V10.5 STYLE: Added a container for the header buttons
   headerActions: { display: 'flex', alignItems: 'center', gap: '12px' },
   newProjectButton: { backgroundColor: '#4f46e5', color: 'white', fontWeight: 'bold', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', transition: 'background-color 0.2s' },
   authButton: { backgroundColor: '#eef2ff', color: '#4f46e5', fontWeight: 'bold', padding: '8px 16px', borderRadius: '8px', border: '1px solid #4f46e5', cursor: 'pointer', transition: 'background-color 0.2s' },
@@ -167,12 +168,22 @@ export default function App() {
         const projectSnapshot = await getDocs(q);
         setProjects(projectSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     };
+    
+    // V10.5 UPDATE: Dynamic Welcome Message
     const handleStartNewProject = () => {
-        const welcomeMessage = { text: "Welcome! I'm the ALF Coach, your creative partner in designing transformative learning experiences. To start, please tell me what age or grade level you are designing for (e.g., '7 year olds', 'high school', or 'university').", sender: 'bot', id: Date.now() };
-        const initialHistory = [{ role: 'user', parts: [{ text: basePrompt }] }, { role: 'model', parts: [{ text: "Understood. I am the ALF Coach. I will now greet the user." }] }];
-        setMessages([welcomeMessage]); setConversationHistory(initialHistory); setConversationStage('select_age');
-        setCurrentProjectId(`temp_${Date.now()}`); setFinalCurriculumText(''); setGeneratedAssignments([]); setFinalProjectDocument(''); setSessionSummary('');
+        setMessages([]); // Clear messages for a fresh start
+        const initialHistory = [{ role: 'user', parts: [{ text: basePrompt }] }, { role: 'model', parts: [{ text: "Understood. I am the ALF Coach." }] }];
+        setConversationHistory(initialHistory);
+        // Have the AI generate its own welcome message
+        generateAiResponse(initialHistory, "You are the ALF Coach. Greet the user for the very first time. Be warm, welcoming, and inspirational. Then, ask them what age or grade level they are designing for.");
+        setConversationStage('select_age');
+        setCurrentProjectId(`temp_${Date.now()}`); 
+        setFinalCurriculumText('');
+        setGeneratedAssignments([]);
+        setFinalProjectDocument('');
+        setSessionSummary('');
     };
+
     const loadProject = async (projectId) => {
         if (!user) return;
         const projectDocRef = doc(db, 'users', user.uid, 'projects', projectId);
@@ -199,7 +210,7 @@ export default function App() {
         const projectData = { 
             history: conversationHistory, 
             lastUpdated: serverTimestamp(), 
-            title: conversationHistory[2]?.parts[0]?.text.substring(0, 50) || 'New Project', 
+            title: conversationHistory.find(h => h.role === 'user' && h.parts[0].text.includes('idea'))?.parts[0].text.substring(0, 50) || 'New Project', 
             stage: conversationStage,
             ageGroup: ageGroup,
             ageGroupPrompt: ageGroupPrompt 
@@ -238,8 +249,18 @@ export default function App() {
         return null;
     };
     
-    const runIntakeSafetyCheck = async (userInput) => { /* Unchanged */ };
-    const runMainSafetyCheck = async (catalystText) => { /* Unchanged */ };
+    const runIntakeSafetyCheck = async (userInput) => {
+        const checkPrompt = intakeSafetyCheckPrompt.replace("[USER'S RESPONSE]", userInput);
+        const result = await callApi({ contents: [{ role: "user", parts: [{ text: checkPrompt }] }] });
+        return result.candidates?.[0]?.content.parts[0].text.trim().replace(/[.,]/g, '') || "SAFE";
+    };
+
+    const runMainSafetyCheck = async (catalystText) => {
+        const checkPrompt = safetyCheckPrompt.replace('[CATALYST SUMMARY]', catalystText);
+        const result = await callApi({ contents: [{ role: "user", parts: [{ text: checkPrompt }] }] });
+        return result.candidates?.[0]?.content.parts[0].text.trim() || "Error";
+    };
+
     const summarizeKeyDecisions = async (historyForSummary) => { /* Unchanged */ };
 
     const generateAiResponse = async (history, systemInstruction = '') => {
@@ -386,7 +407,7 @@ export default function App() {
                         setAgeGroupPrompt(selectedPrompt);
                         
                         // V10.5 FIX: Make the initial prompt acknowledge the user's input.
-                        systemInstruction = `The user has selected **${category}** as their age group. Acknowledge this choice in a friendly and encouraging way (e.g., "Great, designing for [age group]..."), then immediately ask Intake Question 1 from the intake prompt below.\n\n${intakePrompt}`;
+                        systemInstruction = `The user has selected **${category}** as their age group. Acknowledge this choice in a friendly and encouraging way (e.g., "Great, designing for ${category} sounds like a fun challenge!"), then immediately ask Intake Question 1 from the intake prompt below.\n\n${intakePrompt}`;
                         await generateAiResponse(updatedHistory, systemInstruction);
                         setConversationStage('awaiting_intake_1');
                     } else {
