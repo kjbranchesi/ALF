@@ -16,7 +16,7 @@ import { middleSchoolPrompt } from './prompts/middle_school_prompt.js';
 import { highSchoolPrompt } from './prompts/high_school_prompt.js';
 import { universityPrompt } from './prompts/university_prompt.js';
 
-// --- STYLING & ICONS (V10 Update: Added Search Icon) ---
+// --- STYLING & ICONS (No change) ---
 const styles = {
   appContainer: { fontFamily: 'sans-serif', backgroundColor: '#f3f4f6', display: 'flex', flexDirection: 'column', height: '100vh' },
   header: { backgroundColor: 'white', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10, flexShrink: 0 },
@@ -114,7 +114,7 @@ const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
     );
 };
 
-// --- MAIN APP COMPONENT (V10.3 FIX) ---
+// --- MAIN APP COMPONENT (V10.4 OVERHAUL) ---
 export default function App() {
     // --- STATE & REFS (No change) ---
     const [user, setUser] = useState(null);
@@ -157,7 +157,7 @@ export default function App() {
         if (inputRef.current) { inputRef.current.focus(); }
     }, [messages, isBotTyping]);
 
-    // --- DATABASE & AUTH FUNCTIONS (No change) ---
+    // --- DATABASE & AUTH FUNCTIONS (V10.4 Update) ---
     const handleSignIn = async () => { try { await signInAnonymously(auth); } catch (error) { console.error("Sign in error:", error); } };
     const handleSignOut = async () => { await signOut(auth); setCurrentProjectId(null); setMessages([]); setConversationHistory([]); setConversationStage('welcome'); };
     const fetchProjects = async (uid) => {
@@ -188,12 +188,23 @@ export default function App() {
                 }));
             setMessages(loadedMessages);
             setConversationStage(projectData.stage || 'follow_up');
+            // V10.4 FIX: Reload age group context from saved project
+            setAgeGroup(projectData.ageGroup || '');
+            setAgeGroupPrompt(projectData.ageGroupPrompt || '');
             setCurrentProjectId(projectId);
         }
     };
     const saveConversation = async () => {
         if (!user || !currentProjectId) return;
-        const projectData = { history: conversationHistory, lastUpdated: serverTimestamp(), title: conversationHistory[2]?.parts[0]?.text.substring(0, 50) || 'New Project', stage: conversationStage };
+        const projectData = { 
+            history: conversationHistory, 
+            lastUpdated: serverTimestamp(), 
+            title: conversationHistory[2]?.parts[0]?.text.substring(0, 50) || 'New Project', 
+            stage: conversationStage,
+            // V10.4 FIX: Save age group context
+            ageGroup: ageGroup,
+            ageGroupPrompt: ageGroupPrompt 
+        };
         if (currentProjectId.startsWith('temp_')) {
             const projectsCol = collection(db, 'users', user.uid, 'projects');
             const docRef = await addDoc(projectsCol, projectData);
@@ -204,7 +215,7 @@ export default function App() {
         }
     };
 
-    // --- V10.3: API & RESPONSE LOGIC ---
+    // --- V10.4: API & RESPONSE LOGIC ---
     const callApi = async (payload) => {
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -215,7 +226,6 @@ export default function App() {
         return await response.json();
     };
     
-    // V10.3 FIX: Re-implement getAgeGroupFromAI with the correct API call structure.
     const getAgeGroupFromAI = async (userInput) => {
         const sorterPrompt = `You are an input sorter. Your job is to categorize the user's input into one of five specific categories: 'Early Primary', 'Primary', 'Middle School', 'High School', or 'University'. The user's input is: '${userInput}'. Respond with ONLY the category name and nothing else.`;
         const result = await callApi({ contents: [{ role: "user", parts: [{ text: sorterPrompt }] }] });
@@ -233,9 +243,14 @@ export default function App() {
     const runMainSafetyCheck = async (catalystText) => { /* Unchanged */ };
     const summarizeKeyDecisions = async (historyForSummary) => { /* Unchanged */ };
 
-    const generateAiResponse = async (currentHistory) => {
+    const generateAiResponse = async (history, systemInstruction = '') => {
         setIsBotTyping(true);
         try {
+            let historyToSend = [...history];
+            if (systemInstruction) {
+                 historyToSend.push({ role: "user", parts: [{ text: systemInstruction }] });
+            }
+
             const tools = [{
                 "functionDeclarations": [{
                     "name": "googleSearch_search",
@@ -248,7 +263,7 @@ export default function App() {
                 }]
             }];
 
-            const initialResponse = await callApi({ contents: currentHistory, tools: tools });
+            const initialResponse = await callApi({ contents: historyToSend, tools: tools });
             const initialCandidate = initialResponse.candidates?.[0];
             
             let finalResponse;
@@ -258,17 +273,17 @@ export default function App() {
                 const functionCall = initialCandidate.content.parts[0].functionCall;
                 if (functionCall.name === 'googleSearch_search') {
                     const searchQueries = functionCall.args.queries;
-                    const searchMessage = { text: `Running a search for: "${searchQueries.join(", ")}"`, sender: 'bot', id: Date.now() + '_search' };
+                    const searchMessage = { text: `*Searching for: "${searchQueries.join(", ")}"*`, sender: 'bot', id: Date.now() + '_search' };
                     setMessages(prev => [...prev, searchMessage]);
 
                     searchResultsForMessage = [{
                         url: "https://example.com",
                         source_title: "Simulated Search Result",
-                        snippet: "This is a placeholder result. In a real application, this would be populated with live data from a search API."
+                        snippet: "This is a placeholder. In a real app, this would be live data."
                     }];
 
                     const toolResponseHistory = [
-                        ...currentHistory,
+                        ...historyToSend,
                         { role: 'model', parts: [{ functionCall }] },
                         {
                             role: 'function',
@@ -290,19 +305,37 @@ export default function App() {
 
             if (finalResponse.candidates && finalResponse.candidates[0].content) {
                 let text = finalResponse.candidates[0].content.parts[0].text;
-                const newHistory = [...conversationHistory, { role: "model", parts: [{ text }] }];
-                setConversationHistory(newHistory);
+                setConversationHistory(prev => [...prev, { role: "model", parts: [{ text }] }]);
                 
                 const CATALYST_SIGNAL = "<<<CATALYST_DEFINED>>>";
                 const COMPLETION_SIGNAL = "<<<CURRICULUM_COMPLETE>>>";
                 const ASSIGNMENTS_COMPLETE_SIGNAL = "<<<ASSIGNMENTS_COMPLETE>>>";
 
                 if (text.includes(CATALYST_SIGNAL)) {
-                    // ... (rest of signal handling is unchanged)
+                    const summary = text.replace(CATALYST_SIGNAL, "").trim();
+                    const safetyResult = await runMainSafetyCheck(summary);
+                    if (safetyResult === "PROCEED") {
+                        const transitionMessage = text.replace(CATALYST_SIGNAL, "").trim();
+                        setMessages(prev => [...prev, { text: transitionMessage, sender: 'bot', id: Date.now() }]);
+                        setConversationStage('issues_planning');
+                    } else {
+                        setMessages(prev => [...prev, { text: safetyResult, sender: 'bot', id: Date.now() }]);
+                        setConversationStage('catalyst_planning');
+                    }
                 } else if (text.includes(COMPLETION_SIGNAL)) {
-                    // ...
+                    const curriculumText = text.replace(COMPLETION_SIGNAL, "").trim();
+                    setFinalCurriculumText(curriculumText);
+                    await summarizeKeyDecisions(conversationHistory); 
+                    const curriculumMessage = { text: curriculumText, sender: 'bot', id: Date.now() };
+                    const assignmentOffer = { text: "We now have a strong foundation for our curriculum. Shall we now proceed to build out the detailed, scaffolded assignments for the students?", sender: 'bot', id: Date.now() + 1 };
+                    setMessages(prev => [...prev, curriculumMessage, assignmentOffer]);
+                    setConversationStage('awaiting_assignments_confirmation');
                 } else if (text.includes(ASSIGNMENTS_COMPLETE_SIGNAL)) {
-                    // ...
+                    const lastAssignmentText = text.replace(ASSIGNMENTS_COMPLETE_SIGNAL, "").trim();
+                    const allAssignments = [...generatedAssignments, lastAssignmentText].join('\n\n');
+                    const fullDocument = `${finalCurriculumText}\n\n---\n\n## Scaffolded Assignments\n\n${allAssignments}`;
+                    setFinalProjectDocument(fullDocument);
+                    setConversationStage('finished_project');
                 }
                 else {
                     if (conversationStage === 'designing_assignments_main') {
@@ -323,40 +356,38 @@ export default function App() {
         }
     };
     
-    // --- V10.3: CONVERSATIONAL ENGINE FIX ---
+    // --- V10.4: CONVERSATIONAL ENGINE OVERHAUL ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
         setMessages(prev => [...prev, userMessage]);
         const currentInput = inputValue;
-        // NOTE: We create updatedHistory here, but it's only used for certain stages.
-        // Other stages construct their own history to send to the AI.
-        const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
-        setConversationHistory(updatedHistory);
         setInputValue('');
+
+        let updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
+        setConversationHistory(updatedHistory);
+        
         try {
+            let systemInstruction = '';
+            const contextInstruction = `# CONTEXT\nYou are coaching a teacher for the following age group: **${ageGroup}**. You MUST use the pedagogical directives outlined in this specialized prompt:\n\n${ageGroupPrompt}`;
+
             switch (conversationStage) {
                 case 'select_age': {
                     setIsBotTyping(true);
                     const category = await getAgeGroupFromAI(currentInput);
                     if (category) {
-                        setAgeGroup(category);
                         let selectedPrompt = '';
                         if (category === 'Early Primary') selectedPrompt = earlyPrimaryPrompt;
                         else if (category === 'Primary') selectedPrompt = primaryPrompt;
                         else if (category === 'Middle School') selectedPrompt = middleSchoolPrompt;
                         else if (category === 'High School') selectedPrompt = highSchoolPrompt;
                         else if (category === 'University') selectedPrompt = universityPrompt;
+                        
+                        setAgeGroup(category);
                         setAgeGroupPrompt(selectedPrompt);
                         
-                        // This history is specific for kicking off the intake process
-                        const intakeStartHistory = [
-                            ...updatedHistory,
-                            { role: "model", parts: [{ text: `Understood. The user has selected the ${category} age group. Now, I will begin the intake process.` }] },
-                            { role: "user", parts: [{ text: `${intakePrompt}\nAsk Intake Question 1.` }] }
-                        ];
-                        
-                        await generateAiResponse(intakeStartHistory);
+                        systemInstruction = `${intakePrompt}\nAsk Intake Question 1.`;
+                        await generateAiResponse(updatedHistory, systemInstruction);
                         setConversationStage('awaiting_intake_1');
                     } else {
                         setMessages(prev => [...prev, { text: "I'm sorry, I couldn't determine the age group. Could you please try again?", sender: 'bot', id: Date.now() + 1 }]);
@@ -364,14 +395,10 @@ export default function App() {
                     }
                     break;
                 }
-                 case 'awaiting_intake_1': {
+                case 'awaiting_intake_1': {
                     setIntakeAnswers({ experience: currentInput });
-                    // V10.3 FIX: Construct the correct history to send to the AI
-                    const intakeFollowUpHistory = [
-                        ...updatedHistory,
-                        { role: "user", parts: [{ text: `${intakePrompt}\nThe user has responded to Question 1. Their experience level is: '${currentInput}'. Now, follow your protocol to provide the correct pedagogical onboarding (Path A or B) and ask Question 2.` }] }
-                    ];
-                    await generateAiResponse(intakeFollowUpHistory);
+                    systemInstruction = `${intakePrompt}\nThe user has responded to Question 1. Their experience level is: '${currentInput}'. Now, follow your protocol to provide the correct pedagogical onboarding (Path A or B) and ask Question 2.`;
+                    await generateAiResponse(updatedHistory, systemInstruction);
                     setConversationStage('awaiting_intake_2');
                     break;
                 }
@@ -381,8 +408,8 @@ export default function App() {
 
                     if (needsIdeas) {
                         setIntakeAnswers(prev => ({ ...prev, idea: 'User needs help brainstorming' }));
-                        const systemPrompt = `${intakePrompt}\nThe user has indicated they need help brainstorming a topic. Follow Path C.`;
-                        await generateAiResponse([...updatedHistory, { role: 'user', parts: [{ text: systemPrompt }] }]);
+                        systemInstruction = `${intakePrompt}\nThe user has indicated they need help brainstorming a topic. Follow Path C.`;
+                        await generateAiResponse(updatedHistory, systemInstruction);
                         setConversationStage('awaiting_intake_2');
                         return;
                     }
@@ -397,35 +424,48 @@ export default function App() {
                     
                     setIntakeAnswers(prev => ({ ...prev, idea: currentInput }));
                     
-                    let systemInstruction = intakePrompt;
+                    let intakeSystemInstruction = intakePrompt;
                     if (sentiment === 'QUESTIONABLE') {
-                        systemInstruction = `# SPECIAL INSTRUCTION: The user has proposed a sensitive topic. Adopt a neutral, probing tone as you ask the next question. Do not use positive affirmations.\n\n${intakePrompt}`;
+                        intakeSystemInstruction = `# SPECIAL INSTRUCTION: The user has proposed a sensitive topic. Adopt a neutral, probing tone as you ask the next question. Do not use positive affirmations.\n\n${intakePrompt}`;
                     }
                     
-                    const systemPrompt = `${systemInstruction}\nThe user has responded to Question 2 with a topic. Their idea is: '${currentInput}'. Follow your protocol and ask Question 3.`;
-                    await generateAiResponse([...updatedHistory, { role: 'user', parts: [{ text: systemPrompt }] }]);
+                    systemInstruction = `${intakeSystemInstruction}\nThe user has responded to Question 2 with a topic. Their idea is: '${currentInput}'. Follow your protocol and ask Question 3.`;
+                    await generateAiResponse(updatedHistory, systemInstruction);
                     setConversationStage('awaiting_intake_3');
                     break;
                 }
                 case 'awaiting_intake_3': {
                     const finalIntakeAnswers = { ...intakeAnswers, constraints: currentInput };
-                    const finalSystemPrompt = `${basePrompt}\n${ageGroupPrompt}\n# USER CONTEXT FROM INTAKE:\n- User's experience with PBL: ${finalIntakeAnswers.experience}\n- User's starting idea: ${finalIntakeAnswers.idea}\n- User's project constraints: ${finalIntakeAnswers.constraints}`;
+                    systemInstruction = `${contextInstruction}\n\n# USER CONTEXT FROM INTAKE:\n- User's experience with PBL: ${finalIntakeAnswers.experience}\n- User's starting idea: ${finalIntakeAnswers.idea}\n- User's project constraints: ${finalIntakeAnswers.constraints}\n\nNow, begin the curriculum design process. Start with the Catalyst stage.`;
                     const kickoffMessage = { text: "Excellent, this is all incredibly helpful context. Let's get started.", sender: 'bot', id: Date.now() + 1 };
-                    
                     setMessages(prev => [...prev, kickoffMessage]);
-                    
-                    const initialHistory = [...updatedHistory, { role: "model", parts: [{ text: kickoffMessage.text }] }];
-                    setConversationHistory(initialHistory);
-                    
-                    await generateAiResponse(initialHistory);
+                    updatedHistory.push({ role: "model", parts: [{ text: kickoffMessage.text }] });
+                    setConversationHistory(updatedHistory);
+                    await generateAiResponse(updatedHistory, systemInstruction);
                     setConversationStage('catalyst_planning');
+                    break;
+                }
+                case 'awaiting_title': {
+                    systemInstruction = `${contextInstruction}\n\nThe user has chosen the title: "${currentInput}". Now, generate the complete, final curriculum document based on our entire conversation.`;
+                    await generateAiResponse(updatedHistory, systemInstruction);
+                    break;
+                }
+                case 'catalyst_planning':
+                case 'issues_planning':
+                case 'method_planning': {
+                     await generateAiResponse(updatedHistory, contextInstruction);
+                     break;
+                }
+                case 'engagement_planning': {
+                    await generateAiResponse(updatedHistory, contextInstruction);
+                    setConversationStage('awaiting_title');
                     break;
                 }
                 case 'awaiting_assignments_confirmation': {
                     if (currentInput.toLowerCase().includes('yes')) {
                         setConversationStage('designing_assignments_intro');
-                        const systemPrompt = `${assignmentGeneratorPrompt}\n\nHere is the curriculum we designed:\n\n${finalCurriculumText}\n\nNow, begin the assignment design workflow. Start with Step 1: Propose the Scaffolding Strategy for the ${ageGroup} age group.`;
-                        await generateAiResponse([...updatedHistory, { role: "user", parts: [{ text: systemPrompt }] }]);
+                        systemInstruction = `${contextInstruction}\n\n${assignmentGeneratorPrompt}\n\nHere is the curriculum we designed:\n\n${finalCurriculumText}\n\nNow, begin the assignment design workflow. Start with Step 1: Propose the Scaffolding Strategy for the ${ageGroup} age group.`;
+                        await generateAiResponse(updatedHistory, systemInstruction);
                     } else {
                         setMessages(prev => [...prev, { text: "No problem! Feel free to ask any other follow-up questions.", sender: 'bot', id: Date.now() + 1 }]);
                         setConversationStage('follow_up');
@@ -436,11 +476,11 @@ export default function App() {
                 case 'designing_assignments_intro':
                 case 'designing_assignments_main': {
                     setConversationStage('designing_assignments_main');
-                    await generateAiResponse(updatedHistory);
+                    await generateAiResponse(updatedHistory, contextInstruction);
                     break;
                 }
                 default: {
-                    await generateAiResponse(updatedHistory);
+                    await generateAiResponse(updatedHistory, contextInstruction);
                 }
             }
         } catch (error) {
