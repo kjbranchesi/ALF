@@ -114,7 +114,7 @@ const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
     );
 };
 
-// --- MAIN APP COMPONENT (V10.2 FIX) ---
+// --- MAIN APP COMPONENT (V10.3 FIX) ---
 export default function App() {
     // --- STATE & REFS (No change) ---
     const [user, setUser] = useState(null);
@@ -204,7 +204,7 @@ export default function App() {
         }
     };
 
-    // --- V10.2: API & RESPONSE LOGIC ---
+    // --- V10.3: API & RESPONSE LOGIC ---
     const callApi = async (payload) => {
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -215,7 +215,20 @@ export default function App() {
         return await response.json();
     };
     
-    const getAgeGroupFromAI = async (userInput) => { /* Unchanged */ };
+    // V10.3 FIX: Re-implement getAgeGroupFromAI with the correct API call structure.
+    const getAgeGroupFromAI = async (userInput) => {
+        const sorterPrompt = `You are an input sorter. Your job is to categorize the user's input into one of five specific categories: 'Early Primary', 'Primary', 'Middle School', 'High School', or 'University'. The user's input is: '${userInput}'. Respond with ONLY the category name and nothing else.`;
+        const result = await callApi({ contents: [{ role: "user", parts: [{ text: sorterPrompt }] }] });
+        if (result.candidates && result.candidates.length > 0 && result.candidates[0].content.parts[0].text) {
+            const category = result.candidates[0].content.parts[0].text.trim();
+            const validCategories = ['Early Primary', 'Primary', 'Middle School', 'High School', 'University'];
+            if (validCategories.includes(category)) {
+                return category;
+            }
+        }
+        return null;
+    };
+    
     const runIntakeSafetyCheck = async (userInput) => { /* Unchanged */ };
     const runMainSafetyCheck = async (catalystText) => { /* Unchanged */ };
     const summarizeKeyDecisions = async (historyForSummary) => { /* Unchanged */ };
@@ -223,7 +236,6 @@ export default function App() {
     const generateAiResponse = async (currentHistory) => {
         setIsBotTyping(true);
         try {
-            // V10.2 FIX: Correctly define the tool for the Gemini API
             const tools = [{
                 "functionDeclarations": [{
                     "name": "googleSearch_search",
@@ -244,13 +256,11 @@ export default function App() {
 
             if (initialCandidate?.content?.parts[0]?.functionCall) {
                 const functionCall = initialCandidate.content.parts[0].functionCall;
-                // V10.2 FIX: Check for the corrected function name
                 if (functionCall.name === 'googleSearch_search') {
                     const searchQueries = functionCall.args.queries;
                     const searchMessage = { text: `Running a search for: "${searchQueries.join(", ")}"`, sender: 'bot', id: Date.now() + '_search' };
                     setMessages(prev => [...prev, searchMessage]);
 
-                    // This is a placeholder for actual search results.
                     searchResultsForMessage = [{
                         url: "https://example.com",
                         source_title: "Simulated Search Result",
@@ -264,7 +274,6 @@ export default function App() {
                             role: 'function',
                             parts: [{
                                 functionResponse: {
-                                    // V10.2 FIX: Use the corrected function name
                                     name: 'googleSearch_search',
                                     response: { results: searchResultsForMessage }
                                 }
@@ -284,7 +293,6 @@ export default function App() {
                 const newHistory = [...conversationHistory, { role: "model", parts: [{ text }] }];
                 setConversationHistory(newHistory);
                 
-                // --- SIGNAL HANDLING (Unchanged from V9.8) ---
                 const CATALYST_SIGNAL = "<<<CATALYST_DEFINED>>>";
                 const COMPLETION_SIGNAL = "<<<CURRICULUM_COMPLETE>>>";
                 const ASSIGNMENTS_COMPLETE_SIGNAL = "<<<ASSIGNMENTS_COMPLETE>>>";
@@ -300,7 +308,6 @@ export default function App() {
                     if (conversationStage === 'designing_assignments_main') {
                         setGeneratedAssignments(prev => [...prev, text]);
                     }
-                    // Attach search results to the message if they exist
                     const botMessage = { text, sender: 'bot', id: Date.now(), searchResults: searchResultsForMessage };
                     setMessages(prev => [...prev, botMessage]);
                 }
@@ -316,12 +323,14 @@ export default function App() {
         }
     };
     
-    // --- CONVERSATIONAL ENGINE (Unchanged from V9.8) ---
+    // --- V10.3: CONVERSATIONAL ENGINE FIX ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
         setMessages(prev => [...prev, userMessage]);
         const currentInput = inputValue;
+        // NOTE: We create updatedHistory here, but it's only used for certain stages.
+        // Other stages construct their own history to send to the AI.
         const updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
         setConversationHistory(updatedHistory);
         setInputValue('');
@@ -339,8 +348,15 @@ export default function App() {
                         else if (category === 'High School') selectedPrompt = highSchoolPrompt;
                         else if (category === 'University') selectedPrompt = universityPrompt;
                         setAgeGroupPrompt(selectedPrompt);
-                        const systemPrompt = `${intakePrompt}\nAsk Intake Question 1.`;
-                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
+                        
+                        // This history is specific for kicking off the intake process
+                        const intakeStartHistory = [
+                            ...updatedHistory,
+                            { role: "model", parts: [{ text: `Understood. The user has selected the ${category} age group. Now, I will begin the intake process.` }] },
+                            { role: "user", parts: [{ text: `${intakePrompt}\nAsk Intake Question 1.` }] }
+                        ];
+                        
+                        await generateAiResponse(intakeStartHistory);
                         setConversationStage('awaiting_intake_1');
                     } else {
                         setMessages(prev => [...prev, { text: "I'm sorry, I couldn't determine the age group. Could you please try again?", sender: 'bot', id: Date.now() + 1 }]);
@@ -348,11 +364,14 @@ export default function App() {
                     }
                     break;
                 }
-                // ... other cases remain the same
                  case 'awaiting_intake_1': {
                     setIntakeAnswers({ experience: currentInput });
-                    const systemPrompt = `${intakePrompt}\nThe user has responded to Question 1. Their experience level is: '${currentInput}'. Now, follow your protocol to provide the correct pedagogical onboarding (Path A or B) and ask Question 2.`;
-                    await generateAiResponse(updatedHistory);
+                    // V10.3 FIX: Construct the correct history to send to the AI
+                    const intakeFollowUpHistory = [
+                        ...updatedHistory,
+                        { role: "user", parts: [{ text: `${intakePrompt}\nThe user has responded to Question 1. Their experience level is: '${currentInput}'. Now, follow your protocol to provide the correct pedagogical onboarding (Path A or B) and ask Question 2.` }] }
+                    ];
+                    await generateAiResponse(intakeFollowUpHistory);
                     setConversationStage('awaiting_intake_2');
                     break;
                 }
@@ -363,7 +382,7 @@ export default function App() {
                     if (needsIdeas) {
                         setIntakeAnswers(prev => ({ ...prev, idea: 'User needs help brainstorming' }));
                         const systemPrompt = `${intakePrompt}\nThe user has indicated they need help brainstorming a topic. Follow Path C.`;
-                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
+                        await generateAiResponse([...updatedHistory, { role: 'user', parts: [{ text: systemPrompt }] }]);
                         setConversationStage('awaiting_intake_2');
                         return;
                     }
@@ -384,7 +403,7 @@ export default function App() {
                     }
                     
                     const systemPrompt = `${systemInstruction}\nThe user has responded to Question 2 with a topic. Their idea is: '${currentInput}'. Follow your protocol and ask Question 3.`;
-                    await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
+                    await generateAiResponse([...updatedHistory, { role: 'user', parts: [{ text: systemPrompt }] }]);
                     setConversationStage('awaiting_intake_3');
                     break;
                 }
@@ -406,7 +425,7 @@ export default function App() {
                     if (currentInput.toLowerCase().includes('yes')) {
                         setConversationStage('designing_assignments_intro');
                         const systemPrompt = `${assignmentGeneratorPrompt}\n\nHere is the curriculum we designed:\n\n${finalCurriculumText}\n\nNow, begin the assignment design workflow. Start with Step 1: Propose the Scaffolding Strategy for the ${ageGroup} age group.`;
-                        await generateAiResponse([{ role: "user", parts: [{ text: systemPrompt }] }]);
+                        await generateAiResponse([...updatedHistory, { role: "user", parts: [{ text: systemPrompt }] }]);
                     } else {
                         setMessages(prev => [...prev, { text: "No problem! Feel free to ask any other follow-up questions.", sender: 'bot', id: Date.now() + 1 }]);
                         setConversationStage('follow_up');
