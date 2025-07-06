@@ -16,13 +16,15 @@ import { middleSchoolPrompt } from './prompts/middle_school_prompt.js';
 import { highSchoolPrompt } from './prompts/high_school_prompt.js';
 import { universityPrompt } from './prompts/university_prompt.js';
 
-// --- STYLING & ICONS (No change) ---
+// --- STYLING & ICONS (V10.5 Update) ---
 const styles = {
   appContainer: { fontFamily: 'sans-serif', backgroundColor: '#f3f4f6', display: 'flex', flexDirection: 'column', height: '100vh' },
   header: { backgroundColor: 'white', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10, flexShrink: 0 },
   headerTitleContainer: { display: 'flex', flexDirection: 'column' },
   headerTitle: { fontSize: '1.25rem', fontWeight: 'bold', color: '#1f2937', margin: 0 },
   headerSlogan: { fontSize: '0.875rem', color: '#6b7280', margin: 0, marginTop: '4px' },
+  headerActions: { display: 'flex', alignItems: 'center', gap: '12px' },
+  newProjectButton: { backgroundColor: '#4f46e5', color: 'white', fontWeight: 'bold', padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', transition: 'background-color 0.2s' },
   authButton: { backgroundColor: '#eef2ff', color: '#4f46e5', fontWeight: 'bold', padding: '8px 16px', borderRadius: '8px', border: '1px solid #4f46e5', cursor: 'pointer', transition: 'background-color 0.2s' },
   mainContent: { flex: 1, overflowY: 'auto', width: '100%' },
   contentWrapper: { width: '100%', maxWidth: '1024px', margin: '0 auto', padding: '0 24px 24px 24px' },
@@ -49,7 +51,6 @@ const styles = {
 const BotIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '32px', width: '32px', color: '#4f46e5'}} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>);
 const UserIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '32px', width: '32px', color: '#6b7280'}} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" /></svg>);
 const SendIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '24px', width: '24px'}} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>);
-const SearchIcon = () => (<svg xmlns="http://www.w3.org/2000/svg" style={{height: '20px', width: '20px', color: '#6b7280', marginRight: '8px'}} viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" /></svg>);
 
 const renderMarkdown = (text) => {
     if (typeof text !== 'string') return { __html: '' };
@@ -114,9 +115,9 @@ const FinalProjectDisplay = ({ finalDocument, onRestart }) => {
     );
 };
 
-// --- MAIN APP COMPONENT (V10.4 OVERHAUL) ---
+// --- MAIN APP COMPONENT (V10.5) ---
 export default function App() {
-    // --- STATE & REFS (No change) ---
+    // --- STATE & REFS ---
     const [user, setUser] = useState(null);
     const [isAuthReady, setIsAuthReady] = useState(false);
     const [projects, setProjects] = useState([]);
@@ -137,7 +138,7 @@ export default function App() {
     const chatEndRef = useRef(null);
     const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
-    // --- EFFECTS (No change) ---
+    // --- EFFECTS ---
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             if (user) { setUser(user); fetchProjects(user.uid); } 
@@ -157,7 +158,7 @@ export default function App() {
         if (inputRef.current) { inputRef.current.focus(); }
     }, [messages, isBotTyping]);
 
-    // --- DATABASE & AUTH FUNCTIONS (V10.4 Update) ---
+    // --- DATABASE & AUTH FUNCTIONS ---
     const handleSignIn = async () => { try { await signInAnonymously(auth); } catch (error) { console.error("Sign in error:", error); } };
     const handleSignOut = async () => { await signOut(auth); setCurrentProjectId(null); setMessages([]); setConversationHistory([]); setConversationStage('welcome'); };
     const fetchProjects = async (uid) => {
@@ -188,7 +189,6 @@ export default function App() {
                 }));
             setMessages(loadedMessages);
             setConversationStage(projectData.stage || 'follow_up');
-            // V10.4 FIX: Reload age group context from saved project
             setAgeGroup(projectData.ageGroup || '');
             setAgeGroupPrompt(projectData.ageGroupPrompt || '');
             setCurrentProjectId(projectId);
@@ -201,7 +201,6 @@ export default function App() {
             lastUpdated: serverTimestamp(), 
             title: conversationHistory[2]?.parts[0]?.text.substring(0, 50) || 'New Project', 
             stage: conversationStage,
-            // V10.4 FIX: Save age group context
             ageGroup: ageGroup,
             ageGroupPrompt: ageGroupPrompt 
         };
@@ -215,7 +214,7 @@ export default function App() {
         }
     };
 
-    // --- V10.4: API & RESPONSE LOGIC ---
+    // --- API & RESPONSE LOGIC ---
     const callApi = async (payload) => {
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
         const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -356,7 +355,7 @@ export default function App() {
         }
     };
     
-    // --- V10.4: CONVERSATIONAL ENGINE OVERHAUL ---
+    // --- V10.5: CONVERSATIONAL ENGINE UPDATE ---
     const handleSendMessage = async () => {
         if (!inputValue.trim() || isBotTyping) return;
         const userMessage = { text: inputValue, sender: 'user', id: Date.now() };
@@ -386,7 +385,8 @@ export default function App() {
                         setAgeGroup(category);
                         setAgeGroupPrompt(selectedPrompt);
                         
-                        systemInstruction = `${intakePrompt}\nAsk Intake Question 1.`;
+                        // V10.5 FIX: Make the initial prompt acknowledge the user's input.
+                        systemInstruction = `The user has selected **${category}** as their age group. Acknowledge this choice in a friendly and encouraging way (e.g., "Great, designing for [age group]..."), then immediately ask Intake Question 1 from the intake prompt below.\n\n${intakePrompt}`;
                         await generateAiResponse(updatedHistory, systemInstruction);
                         setConversationStage('awaiting_intake_1');
                     } else {
@@ -491,7 +491,7 @@ export default function App() {
     };
 
 
-    // --- RENDER LOGIC (No change) ---
+    // --- RENDER LOGIC (V10.5 Update) ---
     if (!isAuthReady) { return <div style={styles.centeredContainer}><h1>Loading ALF Coach...</h1></div>; }
     return (
         <div style={styles.appContainer}>
@@ -500,7 +500,12 @@ export default function App() {
                     <h1 style={styles.headerTitle}>ALF: The Active Learning Framework Coach</h1>
                     <p style={styles.headerSlogan}>Your Partner in Creative Curriculum</p>
                 </div>
-                {user && <button onClick={handleSignOut} style={styles.authButton}>Sign Out</button>}
+                {user && (
+                    <div style={styles.headerActions}>
+                        <button onClick={handleStartNewProject} style={styles.newProjectButton}>+ New Curriculum</button>
+                        <button onClick={handleSignOut} style={styles.authButton}>Sign Out</button>
+                    </div>
+                )}
             </header>
             <main style={styles.mainContent}>
                 <div style={styles.contentWrapper}>
