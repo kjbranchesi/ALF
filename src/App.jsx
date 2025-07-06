@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V12: FIREBASE & REBUILT PROMPT IMPORTS ---
+// --- V12.1: FIREBASE & REBUILT PROMPT IMPORTS ---
 import { auth, db } from './firebase.js';
 import { onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, getDocs, getDoc, setDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
@@ -16,7 +16,7 @@ import { highSchoolPrompt } from './prompts/high_school_prompt.js';
 import { universityPrompt } from './prompts/university_prompt.js';
 import { imageGeneratorPrompt } from './prompts/image_generator_prompt.js';
 
-// --- STYLING & ICONS (V12 Update) ---
+// --- STYLING & ICONS ---
 const styles = {
   appContainer: { fontFamily: 'sans-serif', backgroundColor: '#f3f4f6', display: 'flex', flexDirection: 'column', height: '100vh' },
   header: { backgroundColor: 'white', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', zIndex: 10, flexShrink: 0 },
@@ -66,13 +66,6 @@ const renderMarkdown = (text) => {
     return { __html: rawMarkup };
 };
 
-const SearchResultCard = ({ result }) => (
-    <div style={styles.searchResultCard}>
-        <a href={result.url} target="_blank" rel="noopener noreferrer" style={styles.searchResultTitle}>{result.source_title}</a>
-        <p style={styles.searchResultSnippet}>{result.snippet}</p>
-    </div>
-);
-
 const ChatMessage = ({ message }) => {
     const { text, sender, searchResults, imageUrl, isLoadingImage } = message;
     const isBot = sender === 'bot';
@@ -90,7 +83,6 @@ const ChatMessage = ({ message }) => {
     );
 };
 
-// V12: Final Summary Display for the end of the project
 const FinalSummaryDisplay = ({ finalDocument, onRestart }) => {
     const [copySuccess, setCopySuccess] = useState('');
     const handleCopy = () => {
@@ -133,6 +125,7 @@ export default function App() {
     const [ageGroupPrompt, setAgeGroupPrompt] = useState('');
     const [finalCurriculumText, setFinalCurriculumText] = useState('');
     const [finalProjectDocument, setFinalProjectDocument] = useState('');
+    const [assignmentCount, setAssignmentCount] = useState(0);
     const inputRef = useRef(null);
     const chatEndRef = useRef(null);
     
@@ -182,6 +175,7 @@ export default function App() {
         setFinalProjectDocument('');
         setAgeGroup('');
         setAgeGroupPrompt('');
+        setAssignmentCount(0);
     };
 
     const loadProject = async (projectId) => {
@@ -203,6 +197,7 @@ export default function App() {
             setAgeGroupPrompt(projectData.ageGroupPrompt || '');
             setFinalCurriculumText(projectData.finalCurriculumText || '');
             setFinalProjectDocument(projectData.finalProjectDocument || '');
+            setAssignmentCount(projectData.assignmentCount || 0);
             setCurrentProjectId(projectId);
         }
     };
@@ -218,6 +213,7 @@ export default function App() {
             ageGroupPrompt,
             finalCurriculumText,
             finalProjectDocument,
+            assignmentCount
         };
         if (currentProjectId.startsWith('temp_')) {
             const projectsCol = collection(db, 'users', user.uid, 'projects');
@@ -261,6 +257,9 @@ export default function App() {
     };
     
     const getAgeGroupFromAI = async (userInput) => {
+        // V12.1 FIX: Correctly map "7 year olds" to Early Primary
+        if (userInput.toLowerCase().includes('7')) return 'Early Primary';
+
         const sorterPrompt = `You are an input sorter. Categorize the user's input into one of these: 'Early Primary', 'Primary', 'Middle School', 'High School', or 'University'. User input: '${userInput}'. Respond with ONLY the category name.`;
         const result = await callGeminiApi({ contents: [{ role: "user", parts: [{ text: sorterPrompt }] }] });
         const category = result.candidates?.[0]?.content.parts[0].text.trim();
@@ -310,29 +309,26 @@ export default function App() {
 
             if (finalResponse.candidates?.[0]?.content) {
                 let text = finalResponse.candidates[0].content.parts[0].text;
-                setConversationHistory(prev => [...prev, { role: "model", parts: [{ text }] }]);
+                
+                const currentHistory = [...history, { role: "model", parts: [{ text }] }];
+                setConversationHistory(currentHistory);
                 
                 const COMPLETION_SIGNAL = "<<<CURRICULUM_COMPLETE>>>";
                 const ASSIGNMENTS_COMPLETE_SIGNAL = "<<<ASSIGNMENTS_COMPLETE>>>";
 
-                // V12 FIX: Correctly handle curriculum display and assignment transition
                 if (text.includes(COMPLETION_SIGNAL)) {
                     const curriculum = text.split(COMPLETION_SIGNAL)[0];
-                    setFinalCurriculumText(curriculum); // Store the raw curriculum
-                    setFinalProjectDocument(curriculum); // Set it as the base for the final doc
-                    
-                    // 1. Display the curriculum in the chat
+                    setFinalCurriculumText(curriculum);
                     const curriculumMessage = { text: curriculum, sender: 'bot', id: Date.now() };
                     setMessages(prev => [...prev, curriculumMessage]);
                     
-                    // 2. Immediately ask the follow-up question
                     const followUpInstruction = `You have just presented the curriculum. Now, execute Step 4 of the Final Output workflow from your base prompt: Proactively offer to generate the assignments.`;
+                    await generateAiResponse(currentHistory, followUpInstruction);
                     setConversationStage('awaiting_assignment_go_ahead');
-                    await generateAiResponse(conversationHistory, followUpInstruction);
 
                 } else if (text.includes(ASSIGNMENTS_COMPLETE_SIGNAL)) {
                     const assignmentsText = text.split(ASSIGNMENTS_COMPLETE_SIGNAL)[0];
-                    const fullProjectDoc = `${finalCurriculumText}\n\n---\n\n${assignmentsText}`;
+                    const fullProjectDoc = `${finalCurriculumText}\n\n---\n\n## Scaffolded Assignments\n\n${assignmentsText}`;
                     setFinalProjectDocument(fullProjectDoc);
                     
                     const assignmentsMessage = { text: assignmentsText, sender: 'bot', id: Date.now() };
@@ -365,6 +361,8 @@ export default function App() {
         
         let systemInstruction = '';
         let nextStage = conversationStage;
+        
+        const totalAssignments = ageGroup === 'High School' || ageGroup === 'University' ? 4 : 3;
 
         switch (conversationStage) {
             case 'select_age':
@@ -402,24 +400,34 @@ export default function App() {
                 break;
             
             case 'awaiting_assignment_go_ahead':
-                systemInstruction = `The user agreed to design assignments. You are now the **Expert Pedagogical Coach**. Your context is the curriculum we just built:\n\n${finalCurriculumText}\n\nExecute Step 1 of the V12 Assignment Design Workflow: Propose the correct scaffolding strategy for **${ageGroup}**.\n\n${assignmentGeneratorPrompt}`;
+                systemInstruction = `The user agreed to design assignments. You are now the **Expert Pedagogical Coach**. Your context is the curriculum we just built:\n\n${finalCurriculumText}\n\nExecute Step 1 of the V12.1 Assignment Design Workflow: Propose the correct, ADAPTED scaffolding strategy for **${ageGroup}**.\n\n${assignmentGeneratorPrompt}`;
                 nextStage = 'awaiting_assignment_strategy_approval';
                 break;
 
             case 'awaiting_assignment_strategy_approval':
-                 systemInstruction = `The user approved the strategy. Execute Step 2 of the workflow: Elicit the teacher's input for the FIRST assignment.\n\n${assignmentGeneratorPrompt}`;
-                 nextStage = 'generating_assignment_1';
+                 systemInstruction = `The user approved the strategy. Execute Step 2 of the workflow: Elicit the teacher's input for the FIRST adapted assignment.\n\n${assignmentGeneratorPrompt}`;
+                 nextStage = `generating_assignment_1`;
                  break;
 
-            case 'generating_assignment_1':
-                systemInstruction = `The user gave input for the first assignment. Execute Step 3: Generate the detailed assignment text and ask for feedback.\n\n${assignmentGeneratorPrompt}`;
-                nextStage = 'awaiting_assignment_1_feedback';
-                break;
-            
             default:
-                systemInstruction = `Continue the conversation based on the current stage: ${conversationStage}. Use this context: # PEDAGOGICAL CONTEXT\n${ageGroupPrompt}`;
-                if (conversationStage === 'design_method') {
-                    systemInstruction += `\n\n# AVAILABLE TOOLS\n${imageGeneratorPrompt}`;
+                if (conversationStage.startsWith('generating_assignment_')) {
+                    const currentAssignmentNum = parseInt(conversationStage.split('_')[2]);
+                    systemInstruction = `The user gave input for assignment #${currentAssignmentNum}. Execute Step 3: Generate the detailed assignment text and ask for feedback.\n\n${assignmentGeneratorPrompt}`;
+                    nextStage = `awaiting_assignment_${currentAssignmentNum}_feedback`;
+                } else if (conversationStage.startsWith('awaiting_assignment_')) {
+                    const finishedAssignmentNum = parseInt(conversationStage.split('_')[2]);
+                    if (finishedAssignmentNum < totalAssignments) {
+                        systemInstruction = `The user approved assignment #${finishedAssignmentNum}. Execute Step 4: Transition to the NEXT assignment.\n\n${assignmentGeneratorPrompt}`;
+                        nextStage = `generating_assignment_${finishedAssignmentNum + 1}`;
+                    } else {
+                        systemInstruction = `The user approved the final assignment. Execute Step 5: Recommend assessment methods and signal completion.\n\n${assignmentGeneratorPrompt}`;
+                        nextStage = 'finished_project'; // Temp stage before final display
+                    }
+                } else {
+                    systemInstruction = `Continue the conversation based on the current stage: ${conversationStage}. Use this context: # PEDAGOGICAL CONTEXT\n${ageGroupPrompt}`;
+                    if (conversationStage === 'design_method') {
+                        systemInstruction += `\n\n# AVAILABLE TOOLS\n${imageGeneratorPrompt}`;
+                    }
                 }
                 break;
         }
