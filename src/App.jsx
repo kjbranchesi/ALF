@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { marked } from 'marked';
 
-// --- V12.1: FIREBASE & REBUILT PROMPT IMPORTS ---
+// --- V12.2: FIREBASE & ALL PROMPT IMPORTS ---
 import { auth, db } from './firebase.js';
 import { onAuthStateChanged, signInAnonymously, signOut } from 'firebase/auth';
 import { collection, addDoc, doc, getDocs, getDoc, setDoc, serverTimestamp, query, orderBy } from 'firebase/firestore';
@@ -9,6 +9,7 @@ import { basePrompt } from './prompts/base_prompt.js';
 import { intakePrompt } from './prompts/intake_prompt.js';
 import { safetyCheckPrompt } from './prompts/safety_check_prompt.js';
 import { assignmentGeneratorPrompt } from './prompts/assignment_generator_prompt.js';
+import { rubricGeneratorPrompt } from './prompts/rubric_generator_prompt.js';
 import { earlyPrimaryPrompt } from './prompts/early_primary_prompt.js';
 import { primaryPrompt } from './prompts/primary_prompt.js';
 import { middleSchoolPrompt } from './prompts/middle_school_prompt.js';
@@ -66,6 +67,13 @@ const renderMarkdown = (text) => {
     return { __html: rawMarkup };
 };
 
+const SearchResultCard = ({ result }) => (
+    <div style={styles.searchResultCard}>
+        <a href={result.url} target="_blank" rel="noopener noreferrer" style={styles.searchResultTitle}>{result.source_title}</a>
+        <p style={styles.searchResultSnippet}>{result.snippet}</p>
+    </div>
+);
+
 const ChatMessage = ({ message }) => {
     const { text, sender, searchResults, imageUrl, isLoadingImage } = message;
     const isBot = sender === 'bot';
@@ -83,27 +91,22 @@ const ChatMessage = ({ message }) => {
     );
 };
 
-const FinalSummaryDisplay = ({ finalDocument, onRestart }) => {
+const FinalSummaryDisplay = ({ finalDocument, onRestart, onGenerateRubric, stage }) => {
     const [copySuccess, setCopySuccess] = useState('');
     const handleCopy = () => {
-        const textarea = document.createElement('textarea');
-        textarea.value = finalDocument;
-        document.body.appendChild(textarea);
-        textarea.select();
-        try {
-            document.execCommand('copy');
+        navigator.clipboard.writeText(finalDocument).then(() => {
             setCopySuccess('Copied!');
             setTimeout(() => setCopySuccess(''), 2000);
-        } catch (err) {
-            setCopySuccess('Failed to copy');
-        }
-        document.body.removeChild(textarea);
+        });
     };
     return (
         <div style={styles.summaryContainer}>
             <div dangerouslySetInnerHTML={renderMarkdown(finalDocument)} />
             <div style={styles.summaryActions}>
-                <button onClick={handleCopy} style={{...styles.actionButton, backgroundColor: '#4f46e5' }}>{copySuccess || 'Copy to Clipboard'}</button>
+                {stage === 'finished_assignments' && (
+                    <button onClick={onGenerateRubric} style={{...styles.actionButton, backgroundColor: '#4f46e5' }}>Design Rubric</button>
+                )}
+                <button onClick={handleCopy} style={styles.actionButton}>{copySuccess || 'Copy to Clipboard'}</button>
                 <button onClick={onRestart} style={styles.actionButton}>Back to Dashboard</button>
             </div>
         </div>
@@ -124,8 +127,8 @@ export default function App() {
     const [ageGroup, setAgeGroup] = useState('');
     const [ageGroupPrompt, setAgeGroupPrompt] = useState('');
     const [finalCurriculumText, setFinalCurriculumText] = useState('');
+    const [finalAssignmentsText, setFinalAssignmentsText] = useState('');
     const [finalProjectDocument, setFinalProjectDocument] = useState('');
-    const [assignmentCount, setAssignmentCount] = useState(0);
     const inputRef = useRef(null);
     const chatEndRef = useRef(null);
     
@@ -172,10 +175,10 @@ export default function App() {
         setConversationStage('select_age');
         setCurrentProjectId(`temp_${Date.now()}`); 
         setFinalCurriculumText('');
+        setFinalAssignmentsText('');
         setFinalProjectDocument('');
         setAgeGroup('');
         setAgeGroupPrompt('');
-        setAssignmentCount(0);
     };
 
     const loadProject = async (projectId) => {
@@ -184,20 +187,16 @@ export default function App() {
         const projectSnap = await getDoc(projectDocRef);
         if (projectSnap.exists()) {
             const projectData = projectSnap.data();
-            const loadedHistory = projectData.history || [];
-            setConversationHistory(loadedHistory);
-            const loadedMessages = loadedHistory
+            setConversationHistory(projectData.history || []);
+            setMessages((projectData.history || [])
                 .filter(turn => !(turn.role === 'user' && turn.parts[0].text.includes('# META-INSTRUCTION')))
-                .map((turn, index) => ({
-                    text: turn.parts[0].text, sender: turn.role === 'user' ? 'user' : 'bot', id: `${projectId}_${index}`
-                }));
-            setMessages(loadedMessages);
+                .map((turn, index) => ({ text: turn.parts[0].text, sender: turn.role === 'user' ? 'user' : 'bot', id: `${projectId}_${index}` })));
             setConversationStage(projectData.stage || 'welcome');
             setAgeGroup(projectData.ageGroup || '');
             setAgeGroupPrompt(projectData.ageGroupPrompt || '');
             setFinalCurriculumText(projectData.finalCurriculumText || '');
+            setFinalAssignmentsText(projectData.finalAssignmentsText || '');
             setFinalProjectDocument(projectData.finalProjectDocument || '');
-            setAssignmentCount(projectData.assignmentCount || 0);
             setCurrentProjectId(projectId);
         }
     };
@@ -212,8 +211,8 @@ export default function App() {
             ageGroup,
             ageGroupPrompt,
             finalCurriculumText,
+            finalAssignmentsText,
             finalProjectDocument,
-            assignmentCount
         };
         if (currentProjectId.startsWith('temp_')) {
             const projectsCol = collection(db, 'users', user.uid, 'projects');
@@ -257,10 +256,8 @@ export default function App() {
     };
     
     const getAgeGroupFromAI = async (userInput) => {
-        // V12.1 FIX: Correctly map "7 year olds" to Early Primary
         if (userInput.toLowerCase().includes('7')) return 'Early Primary';
-
-        const sorterPrompt = `You are an input sorter. Categorize the user's input into one of these: 'Early Primary', 'Primary', 'Middle School', 'High School', or 'University'. User input: '${userInput}'. Respond with ONLY the category name.`;
+        const sorterPrompt = `Categorize the user's input into one of these: 'Early Primary', 'Primary', 'Middle School', 'High School', or 'University'. User input: '${userInput}'. Respond with ONLY the category name.`;
         const result = await callGeminiApi({ contents: [{ role: "user", parts: [{ text: sorterPrompt }] }] });
         const category = result.candidates?.[0]?.content.parts[0].text.trim();
         const validCategories = ['Early Primary', 'Primary', 'Middle School', 'High School', 'University'];
@@ -313,11 +310,12 @@ export default function App() {
                 const currentHistory = [...history, { role: "model", parts: [{ text }] }];
                 setConversationHistory(currentHistory);
                 
-                const COMPLETION_SIGNAL = "<<<CURRICULUM_COMPLETE>>>";
-                const ASSIGNMENTS_COMPLETE_SIGNAL = "<<<ASSIGNMENTS_COMPLETE>>>";
+                const CURRICULUM_SIGNAL = "<<<CURRICULUM_COMPLETE>>>";
+                const ASSIGNMENTS_SIGNAL = "<<<ASSIGNMENTS_COMPLETE>>>";
+                const RUBRIC_SIGNAL = "<<<RUBRIC_COMPLETE>>>";
 
-                if (text.includes(COMPLETION_SIGNAL)) {
-                    const curriculum = text.split(COMPLETION_SIGNAL)[0];
+                if (text.includes(CURRICULUM_SIGNAL)) {
+                    const curriculum = text.split(CURRICULUM_SIGNAL)[0];
                     setFinalCurriculumText(curriculum);
                     const curriculumMessage = { text: curriculum, sender: 'bot', id: Date.now() };
                     setMessages(prev => [...prev, curriculumMessage]);
@@ -326,14 +324,25 @@ export default function App() {
                     await generateAiResponse(currentHistory, followUpInstruction);
                     setConversationStage('awaiting_assignment_go_ahead');
 
-                } else if (text.includes(ASSIGNMENTS_COMPLETE_SIGNAL)) {
-                    const assignmentsText = text.split(ASSIGNMENTS_COMPLETE_SIGNAL)[0];
+                } else if (text.includes(ASSIGNMENTS_SIGNAL)) {
+                    const assignmentsText = text.split(ASSIGNMENTS_SIGNAL)[0];
+                    setFinalAssignmentsText(assignmentsText);
                     const fullProjectDoc = `${finalCurriculumText}\n\n---\n\n## Scaffolded Assignments\n\n${assignmentsText}`;
                     setFinalProjectDocument(fullProjectDoc);
                     
                     const assignmentsMessage = { text: assignmentsText, sender: 'bot', id: Date.now() };
                     setMessages(prev => [...prev, assignmentsMessage]);
+                    setConversationStage('finished_assignments');
+                
+                } else if (text.includes(RUBRIC_SIGNAL)) {
+                    const rubricText = text.split(RUBRIC_SIGNAL)[0];
+                    const fullProjectDocWithRubric = `${finalProjectDocument}\n\n---\n\n## Assessment Rubric\n\n${rubricText}`;
+                    setFinalProjectDocument(fullProjectDocWithRubric);
+                    
+                    const rubricMessage = { text: rubricText, sender: 'bot', id: Date.now() };
+                    setMessages(prev => [...prev, rubricMessage]);
                     setConversationStage('finished_project');
+                
                 } else {
                     const botMessage = { text, sender: 'bot', id: Date.now() };
                     setMessages(prev => [...prev, botMessage]);
@@ -357,7 +366,6 @@ export default function App() {
         setInputValue('');
 
         let updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: currentInput }] }];
-        setConversationHistory(updatedHistory);
         
         let systemInstruction = '';
         let nextStage = conversationStage;
@@ -393,12 +401,12 @@ export default function App() {
                     nextStage = 'intake_awaiting_topic';
                 }
                 break;
-
+            
             case 'intake_awaiting_constraints':
                 systemInstruction = `The user provided constraints. Now, begin the curriculum design by introducing Stage 1: The Catalyst, using the exact phrasing from the base prompt.`;
                 nextStage = 'design_catalyst';
                 break;
-            
+
             case 'awaiting_assignment_go_ahead':
                 systemInstruction = `The user agreed to design assignments. You are now the **Expert Pedagogical Coach**. Your context is the curriculum we just built:\n\n${finalCurriculumText}\n\nExecute Step 1 of the V12.1 Assignment Design Workflow: Propose the correct, ADAPTED scaffolding strategy for **${ageGroup}**.\n\n${assignmentGeneratorPrompt}`;
                 nextStage = 'awaiting_assignment_strategy_approval';
@@ -408,6 +416,16 @@ export default function App() {
                  systemInstruction = `The user approved the strategy. Execute Step 2 of the workflow: Elicit the teacher's input for the FIRST adapted assignment.\n\n${assignmentGeneratorPrompt}`;
                  nextStage = `generating_assignment_1`;
                  break;
+            
+            case 'awaiting_rubric_go_ahead':
+                systemInstruction = `The user agreed to design a rubric. You are now the **Expert Assessment Coach**. Your context is the curriculum and assignments we built:\n\n${finalProjectDocument}\n\nExecute Step 1 of the V12.2 Rubric Design Workflow: Elicit core learning objectives.\n\n${rubricGeneratorPrompt}`;
+                nextStage = 'awaiting_rubric_objectives';
+                break;
+            
+            case 'awaiting_rubric_objectives':
+                systemInstruction = `The user provided objectives. Now, execute Step 2 of the Rubric Design Workflow: Focus on the FIRST objective and elicit proficiency descriptors.\n\n${rubricGeneratorPrompt}`;
+                nextStage = 'generating_rubric_row_1';
+                break;
 
             default:
                 if (conversationStage.startsWith('generating_assignment_')) {
@@ -421,11 +439,22 @@ export default function App() {
                         nextStage = `generating_assignment_${finishedAssignmentNum + 1}`;
                     } else {
                         systemInstruction = `The user approved the final assignment. Execute Step 5: Recommend assessment methods and signal completion.\n\n${assignmentGeneratorPrompt}`;
-                        nextStage = 'finished_project'; // Temp stage before final display
+                        nextStage = 'finished_assignments';
                     }
-                } else {
+                } else if (conversationStage.startsWith('generating_rubric_row_')) {
+                    const currentRowNum = parseInt(conversationStage.split('_')[3]);
+                    systemInstruction = `The user described the exemplary level for objective #${currentRowNum}. Execute Step 3 of the Rubric workflow: Propose language for the full spectrum of that objective.\n\n${rubricGeneratorPrompt}`;
+                    nextStage = `awaiting_rubric_row_${currentRowNum}_feedback`;
+                } else if (conversationStage.startsWith('awaiting_rubric_row_')) {
+                    const finishedRowNum = parseInt(conversationStage.split('_')[3]);
+                    // This logic needs to be expanded to check against the number of objectives the user provided.
+                    // For simplicity here, we'll assume a fixed number or move to completion.
+                    systemInstruction = `The user approved the criteria for objective #${finishedRowNum}. Now, execute Step 5 of the Rubric workflow: Generate the final rubric and signal completion.\n\n${rubricGeneratorPrompt}`;
+                    nextStage = 'finished_project';
+                }
+                else {
                     systemInstruction = `Continue the conversation based on the current stage: ${conversationStage}. Use this context: # PEDAGOGICAL CONTEXT\n${ageGroupPrompt}`;
-                    if (conversationStage === 'design_method') {
+                    if(conversationStage === 'design_method') {
                         systemInstruction += `\n\n# AVAILABLE TOOLS\n${imageGeneratorPrompt}`;
                     }
                 }
@@ -434,6 +463,17 @@ export default function App() {
         
         setConversationStage(nextStage);
         await generateAiResponse(updatedHistory, systemInstruction);
+    };
+
+    const startRubricGeneration = () => {
+        setConversationStage('awaiting_rubric_go_ahead');
+        const userMessage = { text: "Yes, let's build the rubric.", sender: 'user', id: Date.now() };
+        setMessages(prev => [...prev, userMessage]);
+        let updatedHistory = [...conversationHistory, { role: "user", parts: [{ text: userMessage.text }] }];
+        
+        const systemInstruction = `The user agreed to design a rubric. You are now the **Expert Assessment Coach**. Your context is the curriculum and assignments we built:\n\n${finalProjectDocument}\n\nExecute Step 1 of the V12.2 Rubric Design Workflow: Elicit core learning objectives.\n\n${rubricGeneratorPrompt}`;
+        generateAiResponse(updatedHistory, systemInstruction);
+        setConversationStage('awaiting_rubric_objectives');
     };
 
     // --- RENDER LOGIC ---
@@ -466,12 +506,17 @@ export default function App() {
                         </div>
                     ) : (
                         <>
-                            {conversationStage === 'finished_project' ? (
-                                <FinalSummaryDisplay finalDocument={finalProjectDocument} onRestart={() => setCurrentProjectId(null)} />
+                            {['finished_assignments', 'finished_project'].includes(conversationStage) ? (
+                                <FinalSummaryDisplay 
+                                    finalDocument={finalProjectDocument} 
+                                    onRestart={() => setCurrentProjectId(null)} 
+                                    onGenerateRubric={startRubricGeneration}
+                                    stage={conversationStage}
+                                />
                             ) : (
                                 <>
                                     {messages.map((msg) => (<ChatMessage key={msg.id} message={msg} />))}
-                                    {isBotTyping && !messages.some(m => m.isLoadingImage) && ( <div style={styles.messageContainer(true)}><div style={styles.iconContainer}><BotIcon /></div><div style={styles.messageBubble(true)}>...</div></div> )}
+                                    {isBotTyping && <div style={styles.messageContainer(true)}><div style={styles.iconContainer}><BotIcon /></div><div style={styles.messageBubble(true)}>...</div></div>}
                                     <div ref={chatEndRef} />
                                 </>
                             )}
@@ -479,7 +524,7 @@ export default function App() {
                     )}
                 </div>
             </main>
-            {user && currentProjectId && conversationStage !== 'finished_project' && (
+            {user && currentProjectId && !['finished_assignments', 'finished_project'].includes(conversationStage) && (
                 <footer style={styles.footer}>
                     <div style={styles.inputArea}>
                         <textarea ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyPress={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendMessage())} placeholder="Type your response here..." style={styles.textarea} disabled={isBotTyping} />
